@@ -15,4 +15,5 @@ func (a Actions) Sync() {
 	if err := clerkfs.Add(f); err != nil {
 		panic(err)
 	}
+	clerkfs.Apply()
 }
