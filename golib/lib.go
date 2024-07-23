@@ -31,7 +31,7 @@ type Actions struct {
 }
 
 var Name string
-var Box *cmdio.Box = sys.Env(map[string]string{})
+var Box *cmdio.Box = sys.Box()
 
 func (a Actions) Build() {
 	a.Clean()

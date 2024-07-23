@@ -10,7 +10,7 @@ import (
 
 //go:embed .*
 var f embed.FS
-var Box *cmdio.Box = sys.Env(map[string]string{})
+var Box *cmdio.Box = sys.Box()
 
 type Actions struct{}
 
