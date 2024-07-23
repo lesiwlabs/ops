@@ -31,6 +31,7 @@ type Actions struct {
 }
 
 var Name string
+var Box *cmdio.Box = sys.Env(map[string]string{})
 
 func (a Actions) Build() {
 	a.Clean()
@@ -38,43 +39,42 @@ func (a Actions) Build() {
 	a.Test()
 	a.Race()
 	for _, t := range Targets {
-		box := sys.Env(map[string]string{
+		sys.WithEnv(Box, map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
-		})
-		box.MustRun("go", "build", "-o", "/dev/null")
+		}).MustRun("go", "build", "-o", "/dev/null")
 	}
 }
 
 func (a Actions) Clean() {
-	sys.MustRun("rm", "-rf", "out")
-	sys.MustRun("mkdir", "out")
+	Box.MustRun("rm", "-rf", "out")
+	Box.MustRun("mkdir", "out")
 }
 
 func (a Actions) Lint() {
-	sys.MustRun(golang.GolangCi(), "run")
-	sys.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest", "-check")
+	Box.MustRun(golang.GolangCi(), "run")
+	Box.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest", "-check")
 }
 
 func (a Actions) Test() {
-	sys.MustRun(golang.GoTestSum(), "./...")
+	Box.MustRun(golang.GoTestSum(), "./...")
 }
 
 func (a Actions) Race() {
-	sys.MustRun("go", "build", "-race", "-o", "/dev/null")
+	Box.MustRun("go", "build", "-race", "-o", "/dev/null")
 }
 
 func (a Actions) Bump() {
 	bump := cmdio.MustGetPipe(
-		sys.Command("curl", "lesiw.io/bump"),
-		sys.Command("sh"),
+		Box.Command("curl", "lesiw.io/bump"),
+		Box.Command("sh"),
 	).Output
 	version := cmdio.MustGetPipe(
-		sys.Command("git", "describe", "--abbrev=0", "--tags"),
-		sys.Command(bump, "-s", "1"),
+		Box.Command("git", "describe", "--abbrev=0", "--tags"),
+		Box.Command(bump, "-s", "1"),
 	).Output
-	sys.MustRun("git", "tag", version)
-	sys.MustRun("git", "push")
-	sys.MustRun("git", "push", "--tags")
+	Box.MustRun("git", "tag", version)
+	Box.MustRun("git", "push")
+	Box.MustRun("git", "push", "--tags")
 }
