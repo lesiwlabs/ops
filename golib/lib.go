@@ -1,7 +1,7 @@
 package golib
 
 import (
-	"labs.lesiw.io/ci/golang"
+	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
 	"lesiw.io/cmdio/sys"
 )
@@ -26,18 +26,18 @@ var Targets = []Target{
 	{"plan9", "amd64"},
 }
 
-type Actions struct {
-	golang.Actions
+type Ops struct {
+	golang.Ops
 }
 
 var Name string
 var Box *cmdio.Box = sys.Box()
 
-func (a Actions) Build() {
-	a.Clean()
-	a.Lint()
-	a.Test()
-	a.Race()
+func (op Ops) Build() {
+	op.Clean()
+	op.Lint()
+	op.Test()
+	op.Race()
 	for _, t := range Targets {
 		sys.WithEnv(Box, map[string]string{
 			"CGO_ENABLED": "0",
@@ -47,25 +47,25 @@ func (a Actions) Build() {
 	}
 }
 
-func (a Actions) Clean() {
+func (op Ops) Clean() {
 	Box.MustRun("rm", "-rf", "out")
 	Box.MustRun("mkdir", "out")
 }
 
-func (a Actions) Lint() {
+func (op Ops) Lint() {
 	Box.MustRun(golang.GolangCi(), "run")
 	Box.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest", "-check")
 }
 
-func (a Actions) Test() {
+func (op Ops) Test() {
 	Box.MustRun(golang.GoTestSum(), "./...")
 }
 
-func (a Actions) Race() {
+func (op Ops) Race() {
 	Box.MustRun("go", "build", "-race", "-o", "/dev/null")
 }
 
-func (a Actions) Bump() {
+func (op Ops) Bump() {
 	bump := cmdio.MustGetPipe(
 		Box.Command("curl", "lesiw.io/bump"),
 		Box.Command("sh"),

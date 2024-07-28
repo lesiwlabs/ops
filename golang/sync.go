@@ -3,15 +3,15 @@ package golang
 import (
 	"embed"
 
-	"labs.lesiw.io/ci/clerkfs"
+	"labs.lesiw.io/ops/clerkfs"
 )
 
 //go:embed .*
 var f embed.FS
 
-type Actions struct{}
+type Ops struct{}
 
-func (a Actions) Sync() {
+func (op Ops) Sync() {
 	if err := clerkfs.Add(f); err != nil {
 		panic(err)
 	}

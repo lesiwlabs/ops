@@ -4,8 +4,8 @@ import (
 	"io/fs"
 	"sync"
 
-	"lesiw.io/ci"
 	"lesiw.io/clerk"
+	"lesiw.io/ops"
 )
 
 var cfs = new(clerk.ClerkFS)
@@ -17,7 +17,7 @@ func Add(fsys fs.FS) error {
 
 func Apply() {
 	once.Do(func() {
-		ci.PostHandle(func() {
+		ops.PostHandle(func() {
 			if err := cfs.Apply("."); err != nil {
 				panic(err)
 			}
