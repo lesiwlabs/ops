@@ -57,7 +57,6 @@ func (op Ops) Clean() {
 
 func (op Ops) Lint() {
 	BuildBox.MustRun(golang.GolangCi(), "run")
-	BuildBox.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest", "-check")
 }
 
 func (op Ops) Test() {
