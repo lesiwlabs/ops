@@ -80,5 +80,7 @@ func (op Ops) Bump() {
 	).Output
 	LocalBox.MustRun("git", "add", Versionfile)
 	LocalBox.MustRun("git", "commit", "-m", version)
+	LocalBox.MustRun("git", "tag", version)
 	LocalBox.MustRun("git", "push")
+	LocalBox.MustRun("git", "push", "--tags")
 }
