@@ -79,3 +79,15 @@ func (op Ops) Bump() {
 	LocalBox.MustRun("git", "push")
 	LocalBox.MustRun("git", "push", "--tags")
 }
+
+func (op Ops) ProxyPing() {
+	var ref string
+	tag, err := LocalBox.Get("git", "describe", "--exact-match", "--tags")
+	if err == nil {
+		ref = tag.Output
+	} else {
+		ref = LocalBox.MustGet("git", "rev-parse", "HEAD").Output
+	}
+	mod := LocalBox.MustGet("go", "list", "-m").Output
+	LocalBox.MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
+}
