@@ -1,6 +1,8 @@
 package golib
 
 import (
+	"fmt"
+
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
 	"lesiw.io/cmdio/sys"
