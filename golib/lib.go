@@ -2,6 +2,7 @@ package golib
 
 import (
 	"fmt"
+	"runtime"
 
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
@@ -57,7 +58,10 @@ func (op Ops) Clean() {
 
 func (op Ops) Lint() {
 	BuildBox.MustRun(golang.GolangCi(), "run")
-	BuildBox.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest", "-check")
+	if runtime.GOOS != "windows" {
+		BuildBox.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest",
+			"-check")
+	}
 }
 
 func (op Ops) Test() {
