@@ -3,6 +3,7 @@ package golib
 import (
 	"fmt"
 	"runtime"
+	"sync"
 
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
@@ -29,19 +30,25 @@ var Targets = []Target{
 	{"plan9", "amd64"},
 }
 
-type Ops struct {
-	golang.Ops
-}
+type Ops struct{ golang.Ops }
 
 var Name string
 var BuildBox = sys.Box()
 var LocalBox = sys.Box()
+var checkOnce sync.Once
+
+func (op Ops) Check() {
+	checkOnce.Do(func() {
+		op.Clean()
+		op.Lint()
+		op.Test()
+		op.Race()
+		op.Build()
+	})
+}
 
 func (op Ops) Build() {
-	op.Clean()
-	op.Lint()
-	op.Test()
-	op.Race()
+	op.Check()
 	for _, t := range Targets {
 		sys.WithEnv(BuildBox, map[string]string{
 			"CGO_ENABLED": "0",
@@ -73,6 +80,7 @@ func (op Ops) Race() {
 }
 
 func (op Ops) Bump() {
+	op.Check()
 	bump := cmdio.MustGetPipe(
 		LocalBox.Command("curl", "lesiw.io/bump"),
 		LocalBox.Command("sh"),
