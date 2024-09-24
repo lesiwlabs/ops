@@ -43,12 +43,15 @@ func (op Ops) Check() {
 		op.Lint()
 		op.Test()
 		op.Race()
-		op.Build()
+		op.Compile()
 	})
 }
 
 func (op Ops) Build() {
 	op.Check()
+}
+
+func (op Ops) Compile() {
 	for _, t := range Targets {
 		sys.WithEnv(BuildBox, map[string]string{
 			"CGO_ENABLED": "0",
