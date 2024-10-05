@@ -22,7 +22,7 @@ func TestCheckRunsOnce(t *testing.T) {
 
 	var lintcmds int
 	for _, cmd := range bc.cmds {
-		if slices.Equal(cmd, []string{"golangci-lint", "run"}) {
+		if slices.Equal(cmd, []string{"[which golangci-lint]", "run"}) {
 			lintcmds++
 		}
 	}
@@ -39,17 +39,5 @@ func (t *testcmdr) Command(
 	_ context.Context, env map[string]string, args ...string,
 ) io.ReadWriter {
 	t.cmds = append(t.cmds, args)
-	if slices.Equal(args, []string{"which", "golangci-lint"}) {
-		return reply{args, bytes.NewBufferString("golangci-lint")}
-	}
-	return reply{args, bytes.NewBufferString(fmt.Sprintf("%v\n", args))}
-}
-
-type reply struct {
-	arg []string
-	io.ReadWriter
-}
-
-func (r reply) String() string {
-	return fmt.Sprintf("%v", r.arg)
+	return bytes.NewBufferString(fmt.Sprintf("%v\n", args))
 }
