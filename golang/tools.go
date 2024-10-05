@@ -5,26 +5,26 @@ import (
 	"lesiw.io/cmdio/sys"
 )
 
-var Box *cmdio.Box = sys.Box()
+var Rnr *cmdio.Runner = sys.Runner()
 
 func GolangCi() string {
-	if which, err := Box.Get("which", "golangci-lint"); err == nil {
-		return which.Output
+	if which, err := Rnr.Get("which", "golangci-lint"); err == nil {
+		return which.Out
 	}
-	gopath := Box.MustGet("go", "env", "GOPATH")
+	gopath := Rnr.MustGet("go", "env", "GOPATH")
 	cmdio.MustPipe(
-		Box.Command("curl", "-sSfL",
+		Rnr.Command("curl", "-sSfL",
 			"https://raw.githubusercontent.com/golangci"+
 				"/golangci-lint/master/install.sh"),
-		Box.Command("sh", "-s", "--", "-b", gopath.Output+"/bin"),
+		Rnr.Command("sh", "-s", "--", "-b", gopath.Out+"/bin"),
 	)
-	return Box.MustGet("which", "golangci-lint").Output
+	return Rnr.MustGet("which", "golangci-lint").Out
 }
 
 func GoTestSum() string {
-	if which, err := Box.Get("which", "gotestsum"); err == nil {
-		return which.Output
+	if which, err := Rnr.Get("which", "gotestsum"); err == nil {
+		return which.Out
 	}
-	Box.MustRun("go", "install", "gotest.tools/gotestsum@latest")
-	return Box.MustGet("which", "gotestsum").Output
+	Rnr.MustRun("go", "install", "gotest.tools/gotestsum@latest")
+	return Rnr.MustGet("which", "gotestsum").Out
 }

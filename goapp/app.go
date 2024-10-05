@@ -30,8 +30,8 @@ type Ops struct {
 
 var Name string
 var Versionfile = "version.txt"
-var BuildBox = sys.Box()
-var LocalBox = sys.Box()
+var BuildRnr = sys.Runner()
+var LocalRnr = sys.Runner()
 
 func (op Ops) Build() {
 	op.Clean()
@@ -39,7 +39,7 @@ func (op Ops) Build() {
 	op.Test()
 	op.Race()
 	for _, t := range Targets {
-		sys.WithEnv(BuildBox, map[string]string{
+		BuildRnr.WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -51,36 +51,36 @@ func (op Ops) Build() {
 }
 
 func (op Ops) Clean() {
-	BuildBox.MustRun("rm", "-rf", "out")
-	BuildBox.MustRun("mkdir", "out")
+	BuildRnr.MustRun("rm", "-rf", "out")
+	BuildRnr.MustRun("mkdir", "out")
 }
 
 func (op Ops) Lint() {
-	BuildBox.MustRun(golang.GolangCi(), "run")
+	BuildRnr.MustRun(golang.GolangCi(), "run")
 }
 
 func (op Ops) Test() {
-	BuildBox.MustRun(golang.GoTestSum(), "./...")
+	BuildRnr.MustRun(golang.GoTestSum(), "./...")
 }
 
 func (op Ops) Race() {
-	BuildBox.MustRun("go", "build", "-race", "-o", "/dev/null")
+	BuildRnr.MustRun("go", "build", "-race", "-o", "/dev/null")
 }
 
 func (op Ops) Bump() {
 	bump := cmdio.MustGetPipe(
-		LocalBox.Command("curl", "lesiw.io/bump"),
-		LocalBox.Command("sh"),
-	).Output
-	curVersion := LocalBox.MustGet("cat", Versionfile).Output
+		LocalRnr.Command("curl", "lesiw.io/bump"),
+		LocalRnr.Command("sh"),
+	).Out
+	curVersion := LocalRnr.MustGet("cat", Versionfile).Out
 	version := cmdio.MustGetPipe(
 		strings.NewReader(curVersion+"\n"),
-		LocalBox.Command(bump, "-s", "1"),
-		LocalBox.Command("tee", Versionfile),
-	).Output
-	LocalBox.MustRun("git", "add", Versionfile)
-	LocalBox.MustRun("git", "commit", "-m", version)
-	LocalBox.MustRun("git", "tag", version)
-	LocalBox.MustRun("git", "push")
-	LocalBox.MustRun("git", "push", "--tags")
+		LocalRnr.Command(bump, "-s", "1"),
+		LocalRnr.Command("tee", Versionfile),
+	).Out
+	LocalRnr.MustRun("git", "add", Versionfile)
+	LocalRnr.MustRun("git", "commit", "-m", version)
+	LocalRnr.MustRun("git", "tag", version)
+	LocalRnr.MustRun("git", "push")
+	LocalRnr.MustRun("git", "push", "--tags")
 }

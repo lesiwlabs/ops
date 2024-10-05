@@ -17,7 +17,7 @@ func Add(fsys fs.FS) error {
 
 func Apply() {
 	once.Do(func() {
-		ops.PostHandle(func() {
+		ops.After(func() {
 			if err := cfs.Apply("."); err != nil {
 				panic(err)
 			}
