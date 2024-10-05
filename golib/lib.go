@@ -62,12 +62,10 @@ func (Ops) Compile() {
 }
 
 func (Ops) Clean() {
-	BuildRnr.MustRun("rm", "-rf", "out")
-	BuildRnr.MustRun("mkdir", "out")
 }
 
 func (Ops) Lint() {
-	BuildRnr.MustRun(golang.GolangCi(), "run")
+	BuildRnr.MustRun(golang.GolangCi(BuildRnr), "run")
 	if runtime.GOOS != "windows" {
 		BuildRnr.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest",
 			"-check")
@@ -75,7 +73,7 @@ func (Ops) Lint() {
 }
 
 func (Ops) Test() {
-	BuildRnr.MustRun(golang.GoTestSum(), "./...")
+	BuildRnr.MustRun(golang.GoTestSum(BuildRnr), "./...")
 }
 
 func (Ops) Race() {

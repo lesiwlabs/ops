@@ -24,9 +24,7 @@ var Targets = []Target{
 	{"darwin", "arm64", "darwin", "arm64"},
 }
 
-type Ops struct {
-	golang.Ops
-}
+type Ops struct{ golang.Ops }
 
 var Name string
 var Versionfile = "version.txt"
@@ -50,24 +48,24 @@ func (op Ops) Build() {
 	}
 }
 
-func (op Ops) Clean() {
+func (Ops) Clean() {
 	BuildRnr.MustRun("rm", "-rf", "out")
 	BuildRnr.MustRun("mkdir", "out")
 }
 
-func (op Ops) Lint() {
-	BuildRnr.MustRun(golang.GolangCi(), "run")
+func (Ops) Lint() {
+	BuildRnr.MustRun(golang.GolangCi(BuildRnr), "run")
 }
 
-func (op Ops) Test() {
-	BuildRnr.MustRun(golang.GoTestSum(), "./...")
+func (Ops) Test() {
+	BuildRnr.MustRun(golang.GoTestSum(BuildRnr), "./...")
 }
 
-func (op Ops) Race() {
+func (Ops) Race() {
 	BuildRnr.MustRun("go", "build", "-race", "-o", "/dev/null")
 }
 
-func (op Ops) Bump() {
+func (Ops) Bump() {
 	bump := cmdio.MustGetPipe(
 		LocalRnr.Command("curl", "lesiw.io/bump"),
 		LocalRnr.Command("sh"),
