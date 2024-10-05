@@ -50,10 +50,6 @@ func (Ops) Clean() {
 	golang.Runner.MustRun("mkdir", "out")
 }
 
-func (Ops) Lint() {
-	golang.Runner.MustRun(golang.GolangCi(), "run")
-}
-
 func (Ops) Bump() {
 	bump := cmdio.MustGetPipe(
 		git.Runner.Command("curl", "lesiw.io/bump"),

@@ -36,7 +36,6 @@ var checkOnce sync.Once
 
 func (op Ops) Check() {
 	checkOnce.Do(func() {
-		op.Clean()
 		op.Lint()
 		op.Test()
 		op.Compile()
@@ -57,11 +56,8 @@ func (Ops) Compile() {
 	}
 }
 
-func (Ops) Clean() {
-}
-
-func (Ops) Lint() {
-	golang.Runner.MustRun(golang.GolangCi(), "run")
+func (op Ops) Lint() {
+	op.Ops.Lint()
 	if runtime.GOOS != "windows" {
 		golang.Runner.MustRun("go", "run",
 			"github.com/bobg/mingo/cmd/mingo@latest", "-check")
