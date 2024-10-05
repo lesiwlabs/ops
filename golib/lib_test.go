@@ -13,15 +13,15 @@ import (
 )
 
 func TestCheckRunsOnce(t *testing.T) {
-	bc := new(testcmdr)
-	golang.Runner = cmdio.NewRunner(context.Background(), nil, bc)
+	cdr := new(testcdr)
+	golang.Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 
 	for range 3 {
 		Ops{}.Check()
 	}
 
 	var lintcmds int
-	for _, cmd := range bc.cmds {
+	for _, cmd := range *cdr {
 		if slices.Equal(cmd, []string{"[which golangci-lint]", "run"}) {
 			lintcmds++
 		}
@@ -31,13 +31,11 @@ func TestCheckRunsOnce(t *testing.T) {
 	}
 }
 
-type testcmdr struct {
-	cmds [][]string
-}
+type testcdr [][]string
 
-func (t *testcmdr) Command(
+func (c *testcdr) Command(
 	_ context.Context, env map[string]string, args ...string,
 ) io.ReadWriter {
-	t.cmds = append(t.cmds, args)
+	*c = append(*c, args)
 	return bytes.NewBufferString(fmt.Sprintf("%v\n", args))
 }
