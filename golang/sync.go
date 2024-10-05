@@ -9,9 +9,7 @@ import (
 //go:embed .*
 var f embed.FS
 
-type Ops struct{}
-
-func (op Ops) Sync() {
+func (Ops) Sync() {
 	if err := clerkfs.Add(f); err != nil {
 		panic(err)
 	}

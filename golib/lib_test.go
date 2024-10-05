@@ -8,12 +8,13 @@ import (
 	"slices"
 	"testing"
 
+	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
 )
 
 func TestCheckRunsOnce(t *testing.T) {
 	bc := new(testcmdr)
-	BuildRnr = cmdio.NewRunner(context.Background(), nil, bc)
+	golang.Runner = cmdio.NewRunner(context.Background(), nil, bc)
 
 	for range 3 {
 		Ops{}.Check()

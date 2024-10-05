@@ -5,9 +5,9 @@ import (
 	"runtime"
 	"sync"
 
+	"labs.lesiw.io/ops/git"
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
-	"lesiw.io/cmdio/sys"
 )
 
 type Target struct {
@@ -32,9 +32,6 @@ var Targets = []Target{
 
 type Ops struct{ golang.Ops }
 
-var Name string
-var BuildRnr = sys.Runner()
-var LocalRnr = sys.Runner()
 var checkOnce sync.Once
 
 func (op Ops) Check() {
@@ -42,7 +39,6 @@ func (op Ops) Check() {
 		op.Clean()
 		op.Lint()
 		op.Test()
-		op.Race()
 		op.Compile()
 	})
 }
@@ -53,7 +49,7 @@ func (op Ops) Build() {
 
 func (Ops) Compile() {
 	for _, t := range Targets {
-		BuildRnr.WithEnv(map[string]string{
+		golang.Runner.WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -65,44 +61,36 @@ func (Ops) Clean() {
 }
 
 func (Ops) Lint() {
-	BuildRnr.MustRun(golang.GolangCi(BuildRnr), "run")
+	golang.Runner.MustRun(golang.GolangCi(), "run")
 	if runtime.GOOS != "windows" {
-		BuildRnr.MustRun("go", "run", "github.com/bobg/mingo/cmd/mingo@latest",
-			"-check")
+		golang.Runner.MustRun("go", "run",
+			"github.com/bobg/mingo/cmd/mingo@latest", "-check")
 	}
-}
-
-func (Ops) Test() {
-	BuildRnr.MustRun(golang.GoTestSum(BuildRnr), "./...")
-}
-
-func (Ops) Race() {
-	BuildRnr.MustRun("go", "build", "-o", "/dev/null", "-race", "./...")
 }
 
 func (op Ops) Bump() {
 	op.Check()
 	bump := cmdio.MustGetPipe(
-		LocalRnr.Command("curl", "lesiw.io/bump"),
-		LocalRnr.Command("sh"),
+		git.Runner.Command("curl", "lesiw.io/bump"),
+		git.Runner.Command("sh"),
 	).Out
 	version := cmdio.MustGetPipe(
-		LocalRnr.Command("git", "describe", "--abbrev=0", "--tags"),
-		LocalRnr.Command(bump, "-s", "1"),
+		git.Runner.Command("git", "describe", "--abbrev=0", "--tags"),
+		git.Runner.Command(bump, "-s", "1"),
 	).Out
-	LocalRnr.MustRun("git", "tag", version)
-	LocalRnr.MustRun("git", "push")
-	LocalRnr.MustRun("git", "push", "--tags")
+	git.Runner.MustRun("git", "tag", version)
+	git.Runner.MustRun("git", "push")
+	git.Runner.MustRun("git", "push", "--tags")
 }
 
 func (Ops) ProxyPing() {
 	var ref string
-	tag, err := LocalRnr.Get("git", "describe", "--exact-match", "--tags")
+	tag, err := git.Runner.Get("git", "describe", "--exact-match", "--tags")
 	if err == nil {
 		ref = tag.Out
 	} else {
-		ref = LocalRnr.MustGet("git", "rev-parse", "HEAD").Out
+		ref = git.Runner.MustGet("git", "rev-parse", "HEAD").Out
 	}
-	mod := LocalRnr.MustGet("go", "list", "-m").Out
-	LocalRnr.MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
+	mod := golang.Runner.MustGet("go", "list", "-m").Out
+	golang.Runner.MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
 }

@@ -3,9 +3,9 @@ package goapp
 import (
 	"strings"
 
+	"labs.lesiw.io/ops/git"
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
-	"lesiw.io/cmdio/sys"
 )
 
 type Target struct {
@@ -28,16 +28,13 @@ type Ops struct{ golang.Ops }
 
 var Name string
 var Versionfile = "version.txt"
-var BuildRnr = sys.Runner()
-var LocalRnr = sys.Runner()
 
 func (op Ops) Build() {
 	op.Clean()
 	op.Lint()
 	op.Test()
-	op.Race()
 	for _, t := range Targets {
-		BuildRnr.WithEnv(map[string]string{
+		golang.Runner.WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -49,36 +46,28 @@ func (op Ops) Build() {
 }
 
 func (Ops) Clean() {
-	BuildRnr.MustRun("rm", "-rf", "out")
-	BuildRnr.MustRun("mkdir", "out")
+	golang.Runner.MustRun("rm", "-rf", "out")
+	golang.Runner.MustRun("mkdir", "out")
 }
 
 func (Ops) Lint() {
-	BuildRnr.MustRun(golang.GolangCi(BuildRnr), "run")
-}
-
-func (Ops) Test() {
-	BuildRnr.MustRun(golang.GoTestSum(BuildRnr), "./...")
-}
-
-func (Ops) Race() {
-	BuildRnr.MustRun("go", "build", "-race", "-o", "/dev/null")
+	golang.Runner.MustRun(golang.GolangCi(), "run")
 }
 
 func (Ops) Bump() {
 	bump := cmdio.MustGetPipe(
-		LocalRnr.Command("curl", "lesiw.io/bump"),
-		LocalRnr.Command("sh"),
+		git.Runner.Command("curl", "lesiw.io/bump"),
+		git.Runner.Command("sh"),
 	).Out
-	curVersion := LocalRnr.MustGet("cat", Versionfile).Out
+	curVersion := git.Runner.MustGet("cat", Versionfile).Out
 	version := cmdio.MustGetPipe(
 		strings.NewReader(curVersion+"\n"),
-		LocalRnr.Command(bump, "-s", "1"),
-		LocalRnr.Command("tee", Versionfile),
+		git.Runner.Command(bump, "-s", "1"),
+		git.Runner.Command("tee", Versionfile),
 	).Out
-	LocalRnr.MustRun("git", "add", Versionfile)
-	LocalRnr.MustRun("git", "commit", "-m", version)
-	LocalRnr.MustRun("git", "tag", version)
-	LocalRnr.MustRun("git", "push")
-	LocalRnr.MustRun("git", "push", "--tags")
+	git.Runner.MustRun("git", "add", Versionfile)
+	git.Runner.MustRun("git", "commit", "-m", version)
+	git.Runner.MustRun("git", "tag", version)
+	git.Runner.MustRun("git", "push")
+	git.Runner.MustRun("git", "push", "--tags")
 }
