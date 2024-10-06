@@ -16,9 +16,9 @@ func (c *EchoCdr) Command(
 ) io.ReadWriter {
 	*c = append(*c, args)
 	s := fmt.Sprintf("%v", args)
-	if n, ok := Uniq[s]; ok {
-		s = fmt.Sprintf("%s[%d]", s, n+1)
-	}
 	Uniq[s]++
+	if Uniq[s] > 1 {
+		s = fmt.Sprintf("%s[%d]", s, Uniq[s])
+	}
 	return bytes.NewBufferString(s + "\n")
 }
