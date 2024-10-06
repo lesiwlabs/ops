@@ -1,19 +1,17 @@
 package golib
 
 import (
-	"bytes"
 	"context"
-	"fmt"
-	"io"
 	"slices"
 	"testing"
 
 	"labs.lesiw.io/ops/golang"
+	"labs.lesiw.io/ops/internal/test"
 	"lesiw.io/cmdio"
 )
 
 func TestCheckRunsOnce(t *testing.T) {
-	cdr := new(testcdr)
+	cdr := new(test.EchoCdr)
 	golang.Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 
 	for range 3 {
@@ -29,13 +27,4 @@ func TestCheckRunsOnce(t *testing.T) {
 	if got, want := lintcmds, 1; got != want {
 		t.Errorf("golangci-lint runs: %d, want %d", got, want)
 	}
-}
-
-type testcdr [][]string
-
-func (c *testcdr) Command(
-	_ context.Context, env map[string]string, args ...string,
-) io.ReadWriter {
-	*c = append(*c, args)
-	return bytes.NewBufferString(fmt.Sprintf("%v\n", args))
 }

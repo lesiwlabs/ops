@@ -3,6 +3,7 @@ module labs.lesiw.io/ops
 go 1.22.5
 
 require (
+	github.com/google/go-cmp v0.6.0
 	lesiw.io/clerk v0.1.0
 	lesiw.io/cmdio v0.1.0
 	lesiw.io/ops v0.10.0
