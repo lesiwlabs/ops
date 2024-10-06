@@ -17,7 +17,7 @@ func (c *EchoCdr) Command(
 	*c = append(*c, args)
 	s := fmt.Sprintf("%v", args)
 	if n, ok := Uniq[s]; ok {
-		s = fmt.Sprintf("[%d]", n+1)
+		s = fmt.Sprintf("%s[%d]", s, n+1)
 	}
 	Uniq[s]++
 	return bytes.NewBufferString(s + "\n")
