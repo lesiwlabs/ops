@@ -1,12 +1,10 @@
 package golang
 
-import (
-	"lesiw.io/cmdio/sys"
-)
+import "labs.lesiw.io/ops/git"
 
 type Ops struct{}
 
-var Runner = sys.Runner()
+var Runner = git.WorktreeRunner()
 
 func (Ops) Test() {
 	Runner.MustRun(GoTestSum(), "./...", "--", "-race")
