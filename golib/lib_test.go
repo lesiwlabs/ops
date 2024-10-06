@@ -11,6 +11,8 @@ import (
 )
 
 func TestCheckRunsOnce(t *testing.T) {
+	defer clear(test.Uniq)
+
 	cdr := new(test.EchoCdr)
 	golang.Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 

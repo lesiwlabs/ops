@@ -10,6 +10,8 @@ import (
 )
 
 func TestTest(t *testing.T) {
+	defer clear(test.Uniq)
+
 	cdr := new(test.EchoCdr)
 	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 
@@ -25,6 +27,8 @@ func TestTest(t *testing.T) {
 }
 
 func TestLint(t *testing.T) {
+	defer clear(test.Uniq)
+
 	cdr := new(test.EchoCdr)
 	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 
@@ -40,6 +44,8 @@ func TestLint(t *testing.T) {
 }
 
 func TestCov(t *testing.T) {
+	defer clear(test.Uniq)
+
 	cdr := new(test.EchoCdr)
 	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
 
