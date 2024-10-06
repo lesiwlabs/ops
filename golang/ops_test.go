@@ -13,7 +13,9 @@ func TestTest(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
+	Runner = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	Ops{}.Test()
 
@@ -30,7 +32,9 @@ func TestLint(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
+	Runner = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	Ops{}.Lint()
 
@@ -47,7 +51,9 @@ func TestCov(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = cmdio.NewRunner(context.Background(), nil, cdr)
+	Runner = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	Ops{}.Cov()
 

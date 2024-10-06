@@ -34,7 +34,7 @@ func (op Ops) Build() {
 	op.Lint()
 	op.Test()
 	for _, t := range Targets {
-		golang.Runner.WithEnv(map[string]string{
+		golang.Runner().WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -46,8 +46,8 @@ func (op Ops) Build() {
 }
 
 func (Ops) Clean() {
-	golang.Runner.MustRun("rm", "-rf", "out")
-	golang.Runner.MustRun("mkdir", "out")
+	golang.Runner().MustRun("rm", "-rf", "out")
+	golang.Runner().MustRun("mkdir", "out")
 }
 
 func (Ops) Bump() {

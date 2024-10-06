@@ -14,7 +14,9 @@ func TestCheckRunsOnce(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	golang.Runner = cmdio.NewRunner(context.Background(), nil, cdr)
+	golang.Runner = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	for range 3 {
 		Ops{}.Check()

@@ -48,7 +48,7 @@ func (op Ops) Build() {
 
 func (Ops) Compile() {
 	for _, t := range Targets {
-		golang.Runner.WithEnv(map[string]string{
+		golang.Runner().WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -59,7 +59,7 @@ func (Ops) Compile() {
 func (op Ops) Lint() {
 	op.Ops.Lint()
 	if runtime.GOOS != "windows" {
-		golang.Runner.MustRun("go", "run",
+		golang.Runner().MustRun("go", "run",
 			"github.com/bobg/mingo/cmd/mingo@latest", "-check")
 	}
 }
@@ -87,6 +87,6 @@ func (Ops) ProxyPing() {
 	} else {
 		ref = git.Runner.MustGet("git", "rev-parse", "HEAD").Out
 	}
-	mod := golang.Runner.MustGet("go", "list", "-m").Out
-	golang.Runner.MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
+	mod := golang.Runner().MustGet("go", "list", "-m").Out
+	golang.Runner().MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
 }

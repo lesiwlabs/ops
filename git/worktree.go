@@ -12,16 +12,12 @@ func CopyWorktree(dst, src *cmdio.Runner) error {
 	)
 }
 
-func MustCopyWorktree(dst, src *cmdio.Runner) {
-	if err := CopyWorktree(dst, src); err != nil {
-		panic(err)
-	}
-}
-
-func WorktreeRunner() *cmdio.Runner {
+func WorktreeRunner() (*cmdio.Runner, error) {
 	dir := Runner.MustGet("mktemp", "-d").Out
 	ops.Defer(func() { _ = Runner.Run("rm", "-rf", dir) })
 	rnr := Runner.WithEnv(map[string]string{"PWD": dir})
-	MustCopyWorktree(rnr, Runner)
-	return rnr
+	if err := CopyWorktree(rnr, Runner); err != nil {
+		return nil, err
+	}
+	return rnr, nil
 }
