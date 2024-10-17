@@ -43,11 +43,15 @@ func (op Ops) Build() {
 			"out/"+Name+"-"+t.Unames+"-"+t.Unamer, ".",
 		)
 	}
+	cmdio.MustPipe(
+		golang.Runner().Command("tar", "-cf", "-", "out/"),
+		git.Runner.Command("tar", "-xf", "-"),
+	)
 }
 
 func (Ops) Clean() {
-	golang.Runner().MustRun("rm", "-rf", "out")
-	golang.Runner().MustRun("mkdir", "out")
+	git.Runner.MustRun("rm", "-rf", "out")
+	git.Runner.MustRun("mkdir", "out")
 }
 
 func (Ops) Bump() {
