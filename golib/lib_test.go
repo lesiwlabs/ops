@@ -10,6 +10,10 @@ import (
 	"lesiw.io/cmdio"
 )
 
+func init() {
+	golang.GoModReplaceAllowed = true
+}
+
 func TestCheckRunsOnce(t *testing.T) {
 	defer clear(test.Uniq)
 

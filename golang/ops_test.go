@@ -9,6 +9,10 @@ import (
 	"lesiw.io/cmdio"
 )
 
+func init() {
+	GoModReplaceAllowed = true
+}
+
 func TestTest(t *testing.T) {
 	defer clear(test.Uniq)
 
