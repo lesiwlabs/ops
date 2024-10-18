@@ -30,6 +30,9 @@ var Name string
 var Versionfile = "version.txt"
 
 func (op Ops) Build() {
+	if Name == "" {
+		panic("no app name given")
+	}
 	op.Clean()
 	op.Lint()
 	op.Test()
