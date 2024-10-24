@@ -48,29 +48,28 @@ func (op Ops) Build() {
 	}
 	cmdio.MustPipe(
 		golang.Runner().Command("tar", "-cf", "-", "out/"),
-		git.Runner.Command("tar", "-xf", "-"),
+		golang.Busybox().Command("tar", "-xf", "-"),
 	)
 }
 
 func (Ops) Clean() {
-	git.Runner.MustRun("rm", "-rf", "out")
-	git.Runner.MustRun("mkdir", "out")
+	golang.Busybox().MustRun("rm", "-rf", "out")
+	golang.Busybox().MustRun("mkdir", "out")
 }
 
 func (Ops) Bump() {
-	bump := cmdio.MustGetPipe(
-		git.Runner.Command("curl", "lesiw.io/bump"),
-		git.Runner.Command("sh"),
-	).Out
-	curVersion := git.Runner.MustGet("cat", Versionfile).Out
+	if _, err := golang.Runner().Get("which", "bump"); err != nil {
+		golang.Runner().MustRun("go", "install", "lesiw.io/bump@latest")
+	}
+	curVersion := golang.Busybox().MustGet("cat", Versionfile).Out
 	version := cmdio.MustGetPipe(
 		strings.NewReader(curVersion+"\n"),
-		git.Runner.Command(bump, "-s", "1"),
-		git.Runner.Command("tee", Versionfile),
+		golang.Runner().Command("bump", "-s", "1"),
+		golang.Busybox().Command("tee", Versionfile),
 	).Out
-	git.Runner.MustRun("git", "add", Versionfile)
-	git.Runner.MustRun("git", "commit", "-m", version)
-	git.Runner.MustRun("git", "tag", version)
-	git.Runner.MustRun("git", "push")
-	git.Runner.MustRun("git", "push", "--tags")
+	git.Runner().MustRun("add", Versionfile)
+	git.Runner().MustRun("commit", "-m", version)
+	git.Runner().MustRun("tag", version)
+	git.Runner().MustRun("push")
+	git.Runner().MustRun("push", "--tags")
 }

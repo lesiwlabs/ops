@@ -20,6 +20,9 @@ func TestTest(t *testing.T) {
 	Runner = func() *cmdio.Runner {
 		return cmdio.NewRunner(context.Background(), nil, cdr)
 	}
+	Busybox = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	Ops{}.Test()
 
@@ -39,6 +42,9 @@ func TestLint(t *testing.T) {
 	Runner = func() *cmdio.Runner {
 		return cmdio.NewRunner(context.Background(), nil, cdr)
 	}
+	Busybox = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 
 	Ops{}.Lint()
 
@@ -56,6 +62,9 @@ func TestCov(t *testing.T) {
 
 	cdr := new(test.EchoCdr)
 	Runner = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
+	Busybox = func() *cmdio.Runner {
 		return cmdio.NewRunner(context.Background(), nil, cdr)
 	}
 

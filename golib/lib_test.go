@@ -18,6 +18,9 @@ func TestCheckRunsOnce(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
+	golang.Busybox = func() *cmdio.Runner {
+		return cmdio.NewRunner(context.Background(), nil, cdr)
+	}
 	golang.Runner = func() *cmdio.Runner {
 		return cmdio.NewRunner(context.Background(), nil, cdr)
 	}

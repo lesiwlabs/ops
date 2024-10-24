@@ -1,25 +1,19 @@
 package golang
 
-import "lesiw.io/cmdio"
-
 func GolangCi() string {
-	if which, err := Runner().Get("which", "golangci-lint"); err == nil {
+	if which, err := Busybox().Get("which", "golangci-lint"); err == nil {
 		return which.Out
 	}
-	gopath := Runner().MustGet("go", "env", "GOPATH")
-	cmdio.MustPipe(
-		Runner().Command("curl", "-sSfL",
-			"https://raw.githubusercontent.com/golangci"+
-				"/golangci-lint/master/install.sh"),
-		Runner().Command("sh", "-s", "--", "-b", gopath.Out+"/bin"),
-	)
-	return Runner().MustGet("which", "golangci-lint").Out
+	// https://github.com/golangci/golangci-lint/issues/966
+	Runner().MustRun("go", "install",
+		"github.com/golangci/golangci-lint/cmd/golangci-lint@latest")
+	return Busybox().MustGet("which", "golangci-lint").Out
 }
 
 func GoTestSum() string {
-	if which, err := Runner().Get("which", "gotestsum"); err == nil {
+	if which, err := Busybox().Get("which", "gotestsum"); err == nil {
 		return which.Out
 	}
 	Runner().MustRun("go", "install", "gotest.tools/gotestsum@latest")
-	return Runner().MustGet("which", "gotestsum").Out
+	return Busybox().MustGet("which", "gotestsum").Out
 }

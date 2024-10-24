@@ -1,5 +1,12 @@
 package git
 
-import "lesiw.io/cmdio/sys"
+import (
+	"sync"
 
-var Runner = sys.Runner()
+	"lesiw.io/cmdio"
+	"lesiw.io/cmdio/sub"
+)
+
+var Runner = sync.OnceValue(func() *cmdio.Runner {
+	return sub.New("git")
+})

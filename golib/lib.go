@@ -66,26 +66,25 @@ func (op Ops) Lint() {
 
 func (op Ops) Bump() {
 	op.Check()
-	bump := cmdio.MustGetPipe(
-		git.Runner.Command("curl", "lesiw.io/bump"),
-		git.Runner.Command("sh"),
-	).Out
+	if _, err := golang.Busybox().Get("which", "bump"); err != nil {
+		golang.Busybox().MustRun("go", "install", "lesiw.io/bump@latest")
+	}
 	version := cmdio.MustGetPipe(
-		git.Runner.Command("git", "describe", "--abbrev=0", "--tags"),
-		git.Runner.Command(bump, "-s", "1"),
+		git.Runner().Command("describe", "--abbrev=0", "--tags"),
+		golang.Busybox().Command("bump", "-s", "1"),
 	).Out
-	git.Runner.MustRun("git", "tag", version)
-	git.Runner.MustRun("git", "push")
-	git.Runner.MustRun("git", "push", "--tags")
+	git.Runner().MustRun("tag", version)
+	git.Runner().MustRun("push")
+	git.Runner().MustRun("push", "--tags")
 }
 
 func (Ops) ProxyPing() {
 	var ref string
-	tag, err := git.Runner.Get("git", "describe", "--exact-match", "--tags")
+	tag, err := git.Runner().Get("describe", "--exact-match", "--tags")
 	if err == nil {
 		ref = tag.Out
 	} else {
-		ref = git.Runner.MustGet("git", "rev-parse", "HEAD").Out
+		ref = git.Runner().MustGet("rev-parse", "HEAD").Out
 	}
 	mod := golang.Runner().MustGet("go", "list", "-m").Out
 	golang.Runner().MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
