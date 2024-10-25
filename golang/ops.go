@@ -15,14 +15,16 @@ var Source = sync.OnceValue(func() *cmdio.Runner {
 	if rnr, err := busybox.Runner(); err != nil {
 		panic(err)
 	} else {
-		return rnr.WithCommand("git", sys.Runner().Commander)
+		return rnr.WithCommand("git",
+			rnr.WithCommander(sys.Runner().Commander))
 	}
 })
 var Builder = sync.OnceValue(func() *cmdio.Runner {
 	if rnr, err := git.WorktreeRunner(Source()); err != nil {
 		panic(err)
 	} else {
-		return rnr.WithCommand("go", sys.Runner().Commander)
+		return rnr.WithCommand("go",
+			rnr.WithCommander(sys.Runner().Commander))
 	}
 })
 var GoModReplaceAllowed bool
