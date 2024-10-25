@@ -3,7 +3,6 @@ package goapp
 import (
 	"strings"
 
-	"labs.lesiw.io/ops/git"
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
 )
@@ -37,7 +36,7 @@ func (op Ops) Build() {
 	op.Lint()
 	op.Test()
 	for _, t := range Targets {
-		golang.Runner().WithEnv(map[string]string{
+		golang.Builder().WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -47,29 +46,29 @@ func (op Ops) Build() {
 		)
 	}
 	cmdio.MustPipe(
-		golang.Runner().Command("tar", "-cf", "-", "out/"),
-		golang.Busybox().Command("tar", "-xf", "-"),
+		golang.Builder().Command("tar", "-cf", "-", "out/"),
+		golang.Source().Command("tar", "-xf", "-"),
 	)
 }
 
 func (Ops) Clean() {
-	golang.Busybox().MustRun("rm", "-rf", "out")
-	golang.Busybox().MustRun("mkdir", "out")
+	golang.Source().MustRun("rm", "-rf", "out")
+	golang.Source().MustRun("mkdir", "out")
 }
 
 func (Ops) Bump() {
-	if _, err := golang.Runner().Get("which", "bump"); err != nil {
-		golang.Runner().MustRun("go", "install", "lesiw.io/bump@latest")
+	if _, err := golang.Source().Get("which", "bump"); err != nil {
+		golang.Source().MustRun("go", "install", "lesiw.io/bump@latest")
 	}
-	curVersion := golang.Busybox().MustGet("cat", Versionfile).Out
+	curVersion := golang.Builder().MustGet("cat", Versionfile).Out
 	version := cmdio.MustGetPipe(
 		strings.NewReader(curVersion+"\n"),
-		golang.Runner().Command("bump", "-s", "1"),
-		golang.Busybox().Command("tee", Versionfile),
+		golang.Source().Command("bump", "-s", "1"),
+		golang.Source().Command("tee", Versionfile),
 	).Out
-	git.Runner().MustRun("add", Versionfile)
-	git.Runner().MustRun("commit", "-m", version)
-	git.Runner().MustRun("tag", version)
-	git.Runner().MustRun("push")
-	git.Runner().MustRun("push", "--tags")
+	golang.Source().MustRun("git", "add", Versionfile)
+	golang.Source().MustRun("git", "commit", "-m", version)
+	golang.Source().MustRun("git", "tag", version)
+	golang.Source().MustRun("git", "push")
+	golang.Source().MustRun("git", "push", "--tags")
 }

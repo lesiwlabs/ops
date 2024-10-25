@@ -1,19 +1,28 @@
 package golang
 
-func GolangCi() string {
-	if which, err := Busybox().Get("which", "golangci-lint"); err == nil {
-		return which.Out
+import (
+	"sync"
+
+	"lesiw.io/cmdio"
+	"lesiw.io/cmdio/sub"
+)
+
+var GolangCi = sync.OnceValue(func() *cmdio.Runner {
+	if which, err := Builder().Get("which", "golangci-lint"); err == nil {
+		return Builder().WithCommander(sub.New(which.Out).Commander)
 	}
 	// https://github.com/golangci/golangci-lint/issues/966
-	Runner().MustRun("go", "install",
+	Builder().MustRun("go", "install",
 		"github.com/golangci/golangci-lint/cmd/golangci-lint@latest")
-	return Busybox().MustGet("which", "golangci-lint").Out
-}
+	which := Builder().MustGet("which", "golangci-lint")
+	return Builder().WithCommander(sub.New(which.Out).Commander)
+})
 
-func GoTestSum() string {
-	if which, err := Busybox().Get("which", "gotestsum"); err == nil {
-		return which.Out
+var GoTestSum = sync.OnceValue(func() *cmdio.Runner {
+	if which, err := Builder().Get("which", "gotestsum"); err == nil {
+		return Builder().WithCommander(sub.New(which.Out).Commander)
 	}
-	Runner().MustRun("go", "install", "gotest.tools/gotestsum@latest")
-	return Busybox().MustGet("which", "gotestsum").Out
-}
+	Builder().MustRun("go", "install", "gotest.tools/gotestsum@latest")
+	which := Builder().MustGet("which", "gotestsum")
+	return Builder().WithCommander(sub.New(which.Out).Commander)
+})

@@ -1,7 +1,6 @@
 package golib
 
 import (
-	"context"
 	"slices"
 	"testing"
 
@@ -18,12 +17,13 @@ func TestCheckRunsOnce(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	golang.Busybox = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
+	rnr := func() *cmdio.Runner {
+		return new(cmdio.Runner).WithCommander(cdr)
 	}
-	golang.Runner = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
-	}
+	golang.Builder = rnr
+	golang.Source = rnr
+	golang.GoTestSum = rnr
+	golang.GolangCi = rnr
 
 	for range 3 {
 		Ops{}.Check()
@@ -31,7 +31,7 @@ func TestCheckRunsOnce(t *testing.T) {
 
 	var lintcmds int
 	for _, cmd := range *cdr {
-		if slices.Equal(cmd, []string{"[which golangci-lint]", "run"}) {
+		if slices.Equal(cmd, []string{"run"}) {
 			lintcmds++
 		}
 	}

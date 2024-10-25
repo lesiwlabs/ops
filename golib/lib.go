@@ -5,7 +5,6 @@ import (
 	"runtime"
 	"sync"
 
-	"labs.lesiw.io/ops/git"
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
 )
@@ -48,7 +47,7 @@ func (op Ops) Build() {
 
 func (Ops) Compile() {
 	for _, t := range Targets {
-		golang.Runner().WithEnv(map[string]string{
+		golang.Builder().WithEnv(map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
@@ -59,33 +58,35 @@ func (Ops) Compile() {
 func (op Ops) Lint() {
 	op.Ops.Lint()
 	if runtime.GOOS != "windows" {
-		golang.Runner().MustRun("go", "run",
+		golang.Builder().MustRun("go", "run",
 			"github.com/bobg/mingo/cmd/mingo@latest", "-check")
 	}
 }
 
 func (op Ops) Bump() {
 	op.Check()
-	if _, err := golang.Busybox().Get("which", "bump"); err != nil {
-		golang.Busybox().MustRun("go", "install", "lesiw.io/bump@latest")
+	if _, err := golang.Source().Get("which", "bump"); err != nil {
+		golang.Source().MustRun("go", "install", "lesiw.io/bump@latest")
 	}
 	version := cmdio.MustGetPipe(
-		git.Runner().Command("describe", "--abbrev=0", "--tags"),
-		golang.Busybox().Command("bump", "-s", "1"),
+		golang.Source().Command("git", "describe", "--abbrev=0", "--tags"),
+		golang.Source().Command("bump", "-s", "1"),
 	).Out
-	git.Runner().MustRun("tag", version)
-	git.Runner().MustRun("push")
-	git.Runner().MustRun("push", "--tags")
+	golang.Source().MustRun("git", "tag", version)
+	golang.Source().MustRun("git", "push")
+	golang.Source().MustRun("git", "push", "--tags")
 }
 
 func (Ops) ProxyPing() {
 	var ref string
-	tag, err := git.Runner().Get("describe", "--exact-match", "--tags")
+	tag, err := golang.Source().Get("git", "describe", "--exact-match",
+		"--tags")
 	if err == nil {
 		ref = tag.Out
 	} else {
-		ref = git.Runner().MustGet("rev-parse", "HEAD").Out
+		ref = golang.Source().MustGet("git", "rev-parse", "HEAD").Out
 	}
-	mod := golang.Runner().MustGet("go", "list", "-m").Out
-	golang.Runner().MustRun("go", "list", "-m", fmt.Sprintf("%s@%s", mod, ref))
+	mod := golang.Builder().MustGet("go", "list", "-m").Out
+	golang.Builder().MustRun("go", "list", "-m",
+		fmt.Sprintf("%s@%s", mod, ref))
 }

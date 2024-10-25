@@ -5,35 +5,36 @@ import (
 
 	"labs.lesiw.io/ops/git"
 	"lesiw.io/cmdio"
+	"lesiw.io/cmdio/sys"
 	"lesiw.io/cmdio/x/busybox"
 )
 
 type Ops struct{}
 
-var Runner = sync.OnceValue(func() *cmdio.Runner {
-	if rnr, err := git.WorktreeRunner(); err != nil {
-		panic(err)
-	} else {
-		return rnr
-	}
-})
-var Busybox = sync.OnceValue(func() *cmdio.Runner {
+var Source = sync.OnceValue(func() *cmdio.Runner {
 	if rnr, err := busybox.Runner(); err != nil {
 		panic(err)
 	} else {
-		return rnr
+		return rnr.WithCommand("git", sys.Runner().Commander)
+	}
+})
+var Builder = sync.OnceValue(func() *cmdio.Runner {
+	if rnr, err := git.WorktreeRunner(Source()); err != nil {
+		panic(err)
+	} else {
+		return rnr.WithCommand("go", sys.Runner().Commander)
 	}
 })
 var GoModReplaceAllowed bool
 
 func (Ops) Test() {
-	Runner().MustRun(GoTestSum(), "./...", "--", "-race")
+	GoTestSum().MustRun("./...", "--", "-race")
 }
 
 func (Ops) Lint() {
-	Runner().MustRun(GolangCi(), "run")
+	GolangCi().MustRun("run")
 	if !GoModReplaceAllowed {
-		r := Busybox().MustGet("find", ".", "-type", "f", "-name", "go.mod",
+		r := Builder().MustGet("find", ".", "-type", "f", "-name", "go.mod",
 			"-exec",
 			"grep", "-n", "^replace", "go.mod", "/dev/null", ";")
 		if r.Out != "" {
@@ -43,8 +44,8 @@ func (Ops) Lint() {
 }
 
 func (Ops) Cov() {
-	dir := Busybox().MustGet("mktemp", "-d").Out
-	defer Busybox().Run("rm", "-rf", dir)
-	Runner().MustRun("go", "test", "-coverprofile", dir+"/cover.out", "./...")
-	Runner().MustRun("go", "tool", "cover", "-html="+dir+"/cover.out")
+	dir := Builder().MustGet("mktemp", "-d").Out
+	defer Builder().Run("rm", "-rf", dir)
+	Builder().MustRun("go", "test", "-coverprofile", dir+"/cover.out", "./...")
+	Builder().MustRun("go", "tool", "cover", "-html="+dir+"/cover.out")
 }

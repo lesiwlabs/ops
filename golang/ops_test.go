@@ -1,7 +1,6 @@
 package golang
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -17,18 +16,18 @@ func TestTest(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
+	rnr := func() *cmdio.Runner {
+		return new(cmdio.Runner).WithCommander(cdr)
 	}
-	Busybox = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
-	}
+	Builder = rnr
+	Source = rnr
+	GoTestSum = rnr
+	GolangCi = rnr
 
 	Ops{}.Test()
 
 	expectcdr := test.EchoCdr{
-		{"which", "gotestsum"},
-		{"[which gotestsum]", "./...", "--", "-race"},
+		{"./...", "--", "-race"},
 	}
 	if got, want := *cdr, expectcdr; !cmp.Equal(got, want) {
 		t.Errorf("cmds: -want +got\n%s", cmp.Diff(want, got))
@@ -39,18 +38,18 @@ func TestLint(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
+	rnr := func() *cmdio.Runner {
+		return new(cmdio.Runner).WithCommander(cdr)
 	}
-	Busybox = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
-	}
+	Builder = rnr
+	Source = rnr
+	GoTestSum = rnr
+	GolangCi = rnr
 
 	Ops{}.Lint()
 
 	expectcdr := test.EchoCdr{
-		{"which", "golangci-lint"},
-		{"[which golangci-lint]", "run"},
+		{"run"},
 	}
 	if got, want := *cdr, expectcdr; !cmp.Equal(got, want) {
 		t.Errorf("cmds: -want +got\n%s", cmp.Diff(want, got))
@@ -61,12 +60,13 @@ func TestCov(t *testing.T) {
 	defer clear(test.Uniq)
 
 	cdr := new(test.EchoCdr)
-	Runner = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
+	rnr := func() *cmdio.Runner {
+		return new(cmdio.Runner).WithCommander(cdr)
 	}
-	Busybox = func() *cmdio.Runner {
-		return cmdio.NewRunner(context.Background(), nil, cdr)
-	}
+	Builder = rnr
+	Source = rnr
+	GoTestSum = rnr
+	GolangCi = rnr
 
 	Ops{}.Cov()
 
