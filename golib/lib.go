@@ -7,6 +7,7 @@ import (
 
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/cmdio"
+	"lesiw.io/cmdio/sys"
 )
 
 type Target struct {
@@ -70,7 +71,8 @@ func (op Ops) Bump() {
 	}
 	version := cmdio.MustGetPipe(
 		golang.Source().Command("git", "describe", "--abbrev=0", "--tags"),
-		golang.Source().Command("bump", "-s", "1"),
+		golang.Source().WithCommand("bump", sys.Runner()).
+			Command("bump", "-s", "1"),
 	).Out
 	golang.Source().MustRun("git", "tag", version)
 	golang.Source().MustRun("git", "push")
