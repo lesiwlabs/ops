@@ -21,11 +21,13 @@ var k8scfg string
 type Ops struct {
 	goapp.Ops
 
-	Postgres bool   // Whether this app uses a PostgreSQL database.
-	Hostname string // This application's public hostname, if it has one.
-	Memory   int    // Request memory, in MB.
-	Port     int    // Listening port.
-	Scalable bool   // Whether this application can scale.
+	Postgres       bool   // Whether this app uses a PostgreSQL database.
+	Hostname       string // This application's public hostname, if it has one.
+	Memory         int    // Requested memory, in MB.
+	Port           int    // Listening port.
+	Scalable       bool   // Whether this application can scale.
+	ServiceAccount string // K8s service account.
+	K8sDefinitions string // Additional k8s definitions.
 }
 
 func (op Ops) Deploy() error {
@@ -153,6 +155,7 @@ version: 1.0.0
 // 3: Memory
 // 4: Port
 // 5: Additional container config
+// 6: Service account
 const singleAppChart = `---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -168,6 +171,7 @@ spec:
       labels:
         app: %[1]s
     spec:
+      serviceAccountName: %[6]s
       imagePullSecrets:
         - name: regcred
       containers:
@@ -190,6 +194,7 @@ spec:
 // 3: Memory
 // 4: Port
 // 5: Additional container config
+// 6: Service account
 const scalableAppChart = `---
 apiVersion: apps/v1
 kind: Deployment
@@ -205,6 +210,7 @@ spec:
       labels:
         app: %[1]s
     spec:
+	  serviceAccountName: %[6]s
       imagePullSecrets:
         - name: regcred
       containers:
@@ -365,6 +371,7 @@ func (op Ops) deployImage(img string) error {
 			cmp.Or(op.Memory, 32),
 			cmp.Or(op.Port, 8080),
 			z(op.Postgres, fmt.Sprintf(appPGChart, goapp.Name)),
+			cmp.Or(op.ServiceAccount, "default"),
 		)
 	} else {
 		w.Printf(singleAppChart,
@@ -373,6 +380,7 @@ func (op Ops) deployImage(img string) error {
 			cmp.Or(op.Memory, 32),
 			cmp.Or(op.Port, 8080),
 			z(op.Postgres, fmt.Sprintf(appPGChart, goapp.Name)),
+			cmp.Or(op.ServiceAccount, "default"),
 		)
 	}
 	w.Printf(serviceChart, goapp.Name, cmp.Or(op.Port, 8080))
@@ -385,6 +393,7 @@ func (op Ops) deployImage(img string) error {
 	if op.Hostname != "" {
 		w.Printf(ingressChart, goapp.Name, op.Hostname)
 	}
+	w.Printf("%s", op.K8sDefinitions)
 	if w.err != nil {
 		return fmt.Errorf("could not write to template file: %w", w.err)
 	}
