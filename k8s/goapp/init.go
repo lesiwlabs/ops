@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"lesiw.io/cmdio/sub"
+	"lesiw.io/cmdio/sys"
 	"lesiw.io/cmdio/x/busybox"
 	"lesiw.io/defers"
 )
@@ -25,6 +26,7 @@ func runinit() (err error) {
 	if err != nil {
 		return fmt.Errorf("could not create busybox runner: %w", err)
 	}
+	rnr = rnr.WithCommand("go", sys.Runner())
 
 	r, err := rnr.Get("which", "spkez")
 	if err != nil {
@@ -37,7 +39,7 @@ func runinit() (err error) {
 			return fmt.Errorf("could not find spkez: %w", err)
 		}
 	}
-	spkez = sub.WithRunner(rnr, r.Out)
+	spkez = sub.WithRunner(sys.Runner(), r.Out)
 
 	r, err = spkez.Get("get", "k8s/config")
 	if err != nil {
@@ -60,7 +62,7 @@ func runinit() (err error) {
 		return fmt.Errorf("could not get full path of temp file: %w", err)
 	}
 
-	ctr = sub.WithRunner(rnr, "docker")
+	ctr = sub.WithRunner(sys.Runner(), "docker")
 	k8s = sub.WithRunner(ctr,
 		"run", "-i", "--rm",
 		"-v", k8scfg+":/.kube/config",
