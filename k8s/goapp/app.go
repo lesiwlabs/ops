@@ -3,6 +3,7 @@ package goapp
 import (
 	"cmp"
 	"fmt"
+	"io"
 	"math/rand/v2"
 	"os"
 	"path/filepath"
@@ -46,8 +47,21 @@ func (op Ops) Deploy() error {
 	return nil
 }
 
-func (Ops) Destroy() error {
+func (op Ops) Destroy() error {
+	return op.destroy(false)
+}
+
+func (op Ops) ForceDestroy() error {
+	return op.destroy(true)
+}
+
+func (op Ops) destroy(force bool) error {
 	// TODO: Make user type app name to destroy.
+	if !force {
+		if err := op.Backup(); err != nil {
+			return fmt.Errorf("could not backup the application: %w", err)
+		}
+	}
 	helm := sub.WithRunner(ctr,
 		"run", "-ti", "--rm",
 		"-v", k8scfg+":/root/.kube/config",
@@ -58,7 +72,15 @@ func (Ops) Destroy() error {
 	if err != nil {
 		return fmt.Errorf("could not delete helm release: %w", err)
 	}
-	// TODO: Delete Postgres role, if applicable.
+	if op.Postgres {
+		pg := sub.WithRunner(k8s,
+			"exec", "default-1", "-c", "postgres", "--", "psql", "-c",
+		)
+		err := pg.Run(fmt.Sprintf("drop role %s;", goapp.Name))
+		if err != nil {
+			return fmt.Errorf("could not drop postgres role: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -223,11 +245,11 @@ spec:
 const appPGChart = `
           env:
             - name: PGHOST
-              value: db
+              value: default-rw
             - name: PGUSER
-              value: postgres
+              value: %[1]s
             - name: PGDATABASE
-              value: postgres
+              value: %[1]s
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
@@ -253,17 +275,17 @@ spec:
 `
 
 // Database chart.
-// TODO: Edit this to set owner to created role.
 // 1: App
-// 2: Owner (not yet implemented)
+// 2: Owner
 const databaseChart = `---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: %[1]s
 spec:
+  databaseReclaimPolicy: delete
   name: %[1]s
-  owner: app
+  owner: %[2]s
   cluster:
     name: default
 `
@@ -358,8 +380,7 @@ func (op Ops) deployImage(img string) error {
 		if err := createPostgresRole(goapp.Name); err != nil {
 			return fmt.Errorf("failed to create postgres role: %w", err)
 		}
-		// TODO: Manually create app role and pass it in below.
-		w.Printf(databaseChart, goapp.Name)
+		w.Printf(databaseChart, goapp.Name, goapp.Name)
 	}
 	if op.Hostname != "" {
 		w.Printf(ingressChart, goapp.Name, op.Hostname)
@@ -396,20 +417,63 @@ stringData:
   %s: %s`
 
 func createPostgresRole(name string) error {
-	secret := name + "-db-secret"
-	err := k8s.Run("get", "secrets", secret)
+	secretName := name + "-db-secret"
+	var secretPass string
+	err := k8s.Run("get", "secrets", secretName)
 	if err != nil {
+		secretPass := randStr(32)
 		err = cmdio.Pipe(
 			strings.NewReader(fmt.Sprintf(
-				secretCfg, secret, "secret", randStr(32),
+				secretCfg, secretName, "secret", secretPass,
 			)),
 			k8s.Command("apply", "-f", "-"),
 		)
 		if err != nil {
 			return fmt.Errorf("could not generate secret: %w", err)
 		}
+	} else {
+		r, err := cmdio.GetPipe(
+			k8s.Command(
+				"get", "secret", secretName,
+				"-o", "jsonpath={.data.secret}",
+			),
+			rnr.Command("base64", "--decode"),
+		)
+		if err != nil {
+			return fmt.Errorf("could not get postgres password: %w", err)
+		}
+		secretPass = r.Out
 	}
-	// TODO: Create actual role and use name argument in function.
+	pg := sub.WithRunner(k8s,
+		"exec", "default-1", "-c", "postgres", "--", "psql", "-c",
+	)
+	sql := `DO
+$do$
+BEGIN
+   IF EXISTS (
+      SELECT FROM pg_catalog.pg_roles
+      WHERE rolname = '%[1]s') THEN
+
+      RAISE NOTICE 'Role "%[1]s" already exists. Skipping.';
+   ELSE
+      CREATE ROLE %[1]s LOGIN PASSWORD '%[2]s';
+   END IF;
+END
+$do$;
+`
+	trace := cmdio.Trace
+	cmdio.Trace = io.Discard // Hide the database password.
+	defer func() { cmdio.Trace = trace }()
+	// I'd welcome some sanitization here.
+	// Most PostgreSQL libraries don't expose their sanitization methods,
+	// and it would be nice to keep any import used here lightweight
+	// since I only need to run this single query.
+	// goapp.Name is trusted in any case and could already be used
+	// for k8s config injection and other terrible things,
+	// so this isn't an immediate concern.
+	if err := pg.Run(fmt.Sprintf(sql, name, secretPass)); err != nil {
+		return fmt.Errorf("could not create role: %w", err)
+	}
 	return nil
 }
 
