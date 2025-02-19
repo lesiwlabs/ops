@@ -174,21 +174,19 @@ spec:
       labels:
         app: %[1]s
     spec:
-      serviceAccountName: %[6]s
+      serviceAccountName: %[4]s
       imagePullSecrets:
         - name: regcred
       containers:
         - name: app
           image: %[2]s
           imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: %[4]d
-%[5]s
           resources:
             requests:
               memory: %[3]dMi
             limits:
               memory: %[3]dMi
+%[5]s
 `
 
 // Application chart for a scalable app.
@@ -213,21 +211,19 @@ spec:
       labels:
         app: %[1]s
     spec:
-	  serviceAccountName: %[6]s
+	  serviceAccountName: %[4]s
       imagePullSecrets:
         - name: regcred
       containers:
         - name: app
           image: %[2]s
           imagePullPolicy: IfNotPresent
-          ports:
-            - containerPort: %[4]d
-%[5]s
           resources:
             requests:
               memory: %[3]dMi
             limits:
               memory: %[3]dMi
+%[5]s
 ---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -365,31 +361,23 @@ func (op Ops) deployImage(img string) error {
 	if err != nil {
 		return fmt.Errorf("could not create chart template file: %w", err)
 	}
-	env, err := op.env()
+	w := errWriter{w: cfg}
+	ctrspec, err := op.k8sCtrSpec()
 	if err != nil {
 		return fmt.Errorf("could not create environment block: %w", err)
 	}
-	w := errWriter{w: cfg}
-	if op.Scalable {
-		w.Printf(scalableAppChart,
-			goapp.Name,
-			img,
-			cmp.Or(op.Memory, 32),
-			cmp.Or(op.Port, 8080),
-			env,
-			cmp.Or(op.ServiceAccount, "default"),
-		)
-	} else {
-		w.Printf(singleAppChart,
-			goapp.Name,
-			img,
-			cmp.Or(op.Memory, 32),
-			cmp.Or(op.Port, 8080),
-			env,
-			cmp.Or(op.ServiceAccount, "default"),
-		)
+	args := []any{
+		goapp.Name, img, cmp.Or(op.Memory, 32),
+		cmp.Or(op.ServiceAccount, "default"), ctrspec,
 	}
-	w.Printf(serviceChart, goapp.Name, cmp.Or(op.Port, 8080))
+	if op.Scalable {
+		w.Printf(scalableAppChart, args...)
+	} else {
+		w.Printf(singleAppChart, args...)
+	}
+	if op.Port > 0 {
+		w.Printf(serviceChart, goapp.Name, op.Port)
+	}
 	if op.Postgres {
 		if err := createPostgresRole(goapp.Name); err != nil {
 			return fmt.Errorf("failed to create postgres role: %w", err)
@@ -423,13 +411,15 @@ func (op Ops) deployImage(img string) error {
 	return nil
 }
 
-func (op Ops) env() (string, error) {
-	var b strings.Builder
+func (op Ops) k8sCtrSpec() (string, error) {
+	var spec strings.Builder
+
+	var env strings.Builder
 	if op.Postgres {
-		b.WriteString(fmt.Sprintf(appPGChart, goapp.Name))
+		env.WriteString(fmt.Sprintf(appPGChart, goapp.Name))
 	}
 	for k, v := range op.Env {
-		b.WriteString(fmt.Sprintf("            - name: %s\n"+
+		env.WriteString(fmt.Sprintf("            - name: %s\n"+
 			"            value: %s\n", k, v))
 	}
 	for k, v := range op.EnvSecrets {
@@ -440,17 +430,17 @@ func (op Ops) env() (string, error) {
 		if err := op.writeSecret(v, r.Out); err != nil {
 			return "", fmt.Errorf("could not store secret %q: %w", v, err)
 		}
-		b.WriteString(fmt.Sprintf("            - name: %s\n"+
+		env.WriteString(fmt.Sprintf("            - name: %s\n"+
 			"              valueFrom:\n"+
 			"                secretKeyRef:\n"+
 			"                  name: %s\n"+
 			"                  key: data\n", k, v))
 	}
-	if b.Len() > 0 {
-		return "          env:\n" + b.String(), nil
-	} else {
-		return "", nil
+	if env.Len() > 0 {
+		spec.WriteString("          env:\n" + env.String())
 	}
+
+	return spec.String(), nil
 }
 
 func (op Ops) writeSecret(k, v string) error {
