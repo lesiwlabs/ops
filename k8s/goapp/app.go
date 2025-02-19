@@ -28,6 +28,9 @@ type Ops struct {
 	Scalable       bool   // Whether this application can scale.
 	ServiceAccount string // K8s service account.
 	K8sDefinitions string // Additional k8s definitions.
+
+	Env        map[string]string // Map of environment variables.
+	EnvSecrets map[string]string // Map of spkez secrets, exposed as env vars.
 }
 
 func (op Ops) Deploy() error {
@@ -249,7 +252,6 @@ spec:
 // Application chart partial: Postgres config.
 // 1: App
 const appPGChart = `
-          env:
             - name: PGHOST
               value: default-rw
             - name: PGUSER
@@ -363,6 +365,10 @@ func (op Ops) deployImage(img string) error {
 	if err != nil {
 		return fmt.Errorf("could not create chart template file: %w", err)
 	}
+	env, err := op.env()
+	if err != nil {
+		return fmt.Errorf("could not create environment block: %w", err)
+	}
 	w := errWriter{w: cfg}
 	if op.Scalable {
 		w.Printf(scalableAppChart,
@@ -370,7 +376,7 @@ func (op Ops) deployImage(img string) error {
 			img,
 			cmp.Or(op.Memory, 32),
 			cmp.Or(op.Port, 8080),
-			z(op.Postgres, fmt.Sprintf(appPGChart, goapp.Name)),
+			env,
 			cmp.Or(op.ServiceAccount, "default"),
 		)
 	} else {
@@ -379,7 +385,7 @@ func (op Ops) deployImage(img string) error {
 			img,
 			cmp.Or(op.Memory, 32),
 			cmp.Or(op.Port, 8080),
-			z(op.Postgres, fmt.Sprintf(appPGChart, goapp.Name)),
+			env,
 			cmp.Or(op.ServiceAccount, "default"),
 		)
 	}
@@ -413,6 +419,49 @@ func (op Ops) deployImage(img string) error {
 		return fmt.Errorf(
 			"could not helm install: %w\n---\nchart.yml:\n%s", err, contents,
 		)
+	}
+	return nil
+}
+
+func (op Ops) env() (string, error) {
+	var b strings.Builder
+	if op.Postgres {
+		b.WriteString(fmt.Sprintf(appPGChart, goapp.Name))
+	}
+	for k, v := range op.Env {
+		b.WriteString(fmt.Sprintf("            - name: %s\n"+
+			"            value: %s\n", k, v))
+	}
+	for k, v := range op.EnvSecrets {
+		r, err := spkez.Get("get", v)
+		if err != nil {
+			return "", fmt.Errorf("could not read secret %q: %w", v, err)
+		}
+		if err := op.writeSecret(v, r.Out); err != nil {
+			return "", fmt.Errorf("could not store secret %q: %w", v, err)
+		}
+		b.WriteString(fmt.Sprintf("            - name: %s\n"+
+			"              valueFrom:\n"+
+			"                secretKeyRef:\n"+
+			"                  name: %s\n"+
+			"                  key: data\n", k, v))
+	}
+	if b.Len() > 0 {
+		return "          env:\n" + b.String(), nil
+	} else {
+		return "", nil
+	}
+}
+
+func (op Ops) writeSecret(k, v string) error {
+	err := cmdio.Pipe(
+		strings.NewReader(fmt.Sprintf(
+			secretCfg, k, "data", v,
+		)),
+		k8s.Command("apply", "-f", "-"),
+	)
+	if err != nil {
+		return fmt.Errorf("kubectl apply failed: %w", err)
 	}
 	return nil
 }
@@ -508,12 +557,4 @@ func (w *errWriter) Printf(format string, a ...any) {
 		return
 	}
 	_, w.err = w.w.WriteString(fmt.Sprintf(format, a...))
-}
-
-func z[T any](b bool, a T) T {
-	var zero T
-	if b {
-		return a
-	}
-	return zero
 }
