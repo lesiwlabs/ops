@@ -80,7 +80,7 @@ func (op Ops) destroy(force bool) error {
 	}
 	if op.Postgres {
 		pg := sub.WithRunner(k8s,
-			"exec", "default-1", "-c", "postgres", "--", "psql", "-c",
+			"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 		)
 		err := pg.Run(fmt.Sprintf("drop role %s;", goapp.Name))
 		if err != nil {
@@ -250,7 +250,7 @@ spec:
 // 1: App
 const appPGChart = `
             - name: PGHOST
-              value: default-rw
+              value: postgres-rw
             - name: PGUSER
               value: %[1]s
             - name: PGDATABASE
@@ -292,7 +292,7 @@ spec:
   name: %[1]s
   owner: %[2]s
   cluster:
-    name: default
+    name: postgres
 `
 
 // Ingress chart.
@@ -496,7 +496,7 @@ func createPostgresRole(name string) error {
 		secretPass = r.Out
 	}
 	pg := sub.WithRunner(k8s,
-		"exec", "default-1", "-c", "postgres", "--", "psql", "-c",
+		"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 	)
 	sql := `DO
 $do$
