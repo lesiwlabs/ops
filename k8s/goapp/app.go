@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -427,14 +428,16 @@ func (op Ops) k8sCtrSpec() (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("could not read secret %q: %w", v, err)
 		}
-		if err := op.writeSecret(v, r.Out); err != nil {
+		name := regexp.MustCompile(`[^a-zA-Z0-9]+`).
+			ReplaceAllString(v, ".")
+		if err := op.writeSecret(name, r.Out); err != nil {
 			return "", fmt.Errorf("could not store secret %q: %w", v, err)
 		}
 		env.WriteString(fmt.Sprintf("            - name: %s\n"+
 			"              valueFrom:\n"+
 			"                secretKeyRef:\n"+
 			"                  name: %s\n"+
-			"                  key: data\n", k, v))
+			"                  key: data\n", k, name))
 	}
 	if env.Len() > 0 {
 		spec.WriteString("          env:\n" + env.String())
