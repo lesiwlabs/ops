@@ -13,7 +13,7 @@ var GolangCi = sync.OnceValue(func() *cmdio.Runner {
 	}
 	// https://github.com/golangci/golangci-lint/issues/966
 	Builder().MustRun("go", "install",
-		"github.com/golangci/golangci-lint/cmd/golangci-lint@latest")
+		"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest")
 	which := Builder().MustGet("which", "golangci-lint")
 	return Builder().WithCommander(sub.New(which.Out).Commander)
 })
