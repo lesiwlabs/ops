@@ -5,13 +5,14 @@ import (
 	"fmt"
 
 	"labs.lesiw.io/ops/clerkfs"
+	"lesiw.io/cmdio/sys"
 )
 
 //go:embed .*
 var f embed.FS
 
 func (Ops) Sync() error {
-	err := Builder().WithEnv(map[string]string{"PWD": ".ops"}).
+	err := sys.Runner().WithEnv(map[string]string{"PWD": ".ops"}).
 		Run("go", "get", "-u", "all")
 	if err != nil {
 		return fmt.Errorf("failed to run go mod -u all: %w", err)
