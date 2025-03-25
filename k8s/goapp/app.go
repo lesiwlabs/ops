@@ -118,10 +118,10 @@ func (op Ops) createImage(app string) (string, error) {
 		return "", fmt.Errorf("could not create Dockerfile: %w", err)
 	}
 	defer func() { os.Remove(file.Name()) }()
-	_, err = file.WriteString(fmt.Sprintf(`FROM scratch
+	_, err = fmt.Fprintf(file, `FROM scratch
 COPY %s /app
 CMD [ "/app" ]
-`, app))
+`, app)
 	if err != nil {
 		return "", fmt.Errorf("could not write to Dockerfile: %w", err)
 	}
