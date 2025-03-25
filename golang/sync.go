@@ -2,6 +2,7 @@ package golang
 
 import (
 	"embed"
+	"fmt"
 
 	"labs.lesiw.io/ops/clerkfs"
 )
@@ -9,9 +10,15 @@ import (
 //go:embed .*
 var f embed.FS
 
-func (Ops) Sync() {
-	if err := clerkfs.Add(f); err != nil {
-		panic(err)
+func (Ops) Sync() error {
+	err := Builder().WithEnv(map[string]string{"PWD": ".ops"}).
+		Run("go", "get", "-u", "all")
+	if err != nil {
+		return fmt.Errorf("failed to run go mod -u all: %w", err)
 	}
-	clerkfs.Apply()
+	if err := clerkfs.Add(f); err != nil {
+		return fmt.Errorf("could not add file to clerk: %w", err)
+	}
+	clerkfs.Apply() // FIXME: Can still panic.
+	return nil
 }
