@@ -472,7 +472,7 @@ func createPostgresRole(name string) error {
 	var secretPass string
 	err := k8s.Run("get", "secrets", secretName)
 	if err != nil {
-		secretPass := randStr(32)
+		secretPass = randStr(32)
 		err = cmdio.Pipe(
 			strings.NewReader(fmt.Sprintf(
 				secretCfg, secretName, "secret", secretPass,
