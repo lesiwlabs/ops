@@ -67,7 +67,7 @@ func (op Ops) Lint() {
 func (op Ops) Bump() {
 	op.Check()
 	if _, err := golang.Source().Get("which", "bump"); err != nil {
-		golang.Source().MustRun("go", "install", "lesiw.io/bump@latest")
+		golang.Builder().MustRun("go", "install", "lesiw.io/bump@latest")
 	}
 	version := cmdio.MustGetPipe(
 		golang.Source().Command("git", "describe", "--abbrev=0", "--tags"),
