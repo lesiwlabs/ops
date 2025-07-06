@@ -5,6 +5,7 @@ linters:
     - gocheckcompilerdirectives
     - gocyclo
     - godot
+    - gofmt
     - lll
     - makezero
     - unparam
