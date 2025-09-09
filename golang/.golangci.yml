@@ -5,7 +5,6 @@ linters:
     - gocheckcompilerdirectives
     - gocyclo
     - godot
-    - gofmt
     - lll
     - makezero
     - unparam
@@ -31,6 +30,8 @@ linters:
       - builtin$
       - examples$
 formatters:
+  enable:
+    - gofmt
   exclusions:
     generated: lax
     paths:
