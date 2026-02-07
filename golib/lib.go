@@ -39,15 +39,15 @@ var errCheck error
 
 func (op Ops) Check() error {
 	checkOnce.Do(func() {
-		if err := op.Vet(); err != nil {
-			errCheck = err
-			return
-		}
-		if err := op.Compile(); err != nil {
-			errCheck = err
-			return
-		}
-		errCheck = op.Test()
+		errCheck = golang.InCleanTree(func() error {
+			if err := op.Vet(); err != nil {
+				return err
+			}
+			if err := op.Compile(); err != nil {
+				return err
+			}
+			return op.Test()
+		})
 	})
 	return errCheck
 }

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -206,6 +207,59 @@ func (Ops) Cov() error {
 	}
 	return Builder.Exec(ctx, "go", "tool", "cover",
 		"-html="+coverOut.Path())
+}
+
+// InCleanTree extracts the committed git tree into a
+// temporary directory and runs fn there. This ensures checks
+// run against committed state only.
+var InCleanTree = inCleanTree
+
+func inCleanTree(fn func() error) error {
+	ctx := context.Background()
+	tmp, err := os.MkdirTemp("", "op-check-")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	// Extract committed tree into temp dir.
+	archive := command.NewReader(ctx,
+		Source, "git", "archive", "HEAD")
+	tar := command.NewWriter(ctx,
+		Source.Unshell(), "tar", "-xf", "-", "-C", tmp)
+	if _, err = io.Copy(tar, archive); err != nil {
+		return fmt.Errorf("git archive: %w", err)
+	}
+	archive.Close()
+	tar.Close()
+
+	orig, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getwd: %w", err)
+	}
+	if err = os.Chdir(tmp); err != nil {
+		return fmt.Errorf("chdir: %w", err)
+	}
+	defer os.Chdir(orig)
+
+	// Init git repo for diffCheck.
+	err = Source.Exec(ctx, "git", "init")
+	if err != nil {
+		return fmt.Errorf("git init: %w", err)
+	}
+	err = Source.Exec(ctx, "git", "add", "-A")
+	if err != nil {
+		return fmt.Errorf("git add: %w", err)
+	}
+	err = Source.Exec(ctx,
+		"git", "commit", "--allow-empty",
+		"-m", "init",
+		"--author", "op <op@localhost>")
+	if err != nil {
+		return fmt.Errorf("git commit: %w", err)
+	}
+
+	return fn()
 }
 
 func modules(ctx context.Context) ([]string, error) {

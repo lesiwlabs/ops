@@ -33,6 +33,35 @@ type Ops struct{ golang.Ops }
 var Name string
 var Versionfile = "version.txt"
 
+func (op Ops) Check() error {
+	return golang.InCleanTree(func() error {
+		if err := op.Vet(); err != nil {
+			return err
+		}
+		if err := op.Compile(); err != nil {
+			return err
+		}
+		return op.Test()
+	})
+}
+
+func (Ops) Compile() error {
+	ctx := context.Background()
+	for _, t := range Targets {
+		ctx := command.WithEnv(ctx, map[string]string{
+			"CGO_ENABLED": "0",
+			"GOOS":        t.Goos,
+			"GOARCH":      t.Goarch,
+		})
+		err := golang.Builder.Exec(ctx,
+			"go", "build", "-o", "/dev/null", ".")
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (op Ops) Build() error {
 	if Name == "" {
 		return fmt.Errorf("no app name given")

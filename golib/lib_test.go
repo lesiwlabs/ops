@@ -34,6 +34,8 @@ func TestCheckRunsOnce(t *testing.T) {
 	}
 	swap(t, &golang.Builder, sh)
 	swap(t, &golang.Source, sh)
+	swap(t, &golang.InCleanTree,
+		func(fn func() error) error { return fn() })
 	swap(t, &checkOnce, sync.Once{})
 	swap(t, &errCheck, error(nil))
 
