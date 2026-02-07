@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"slices"
 	"strings"
 
@@ -31,6 +30,7 @@ import (
 	"lesiw.io/command"
 	"lesiw.io/command/sys"
 	"lesiw.io/errcheck/errcheck"
+	"lesiw.io/fs"
 	"lesiw.io/fs/path"
 	"lesiw.io/linelen"
 	"lesiw.io/plscheck/deprecated"
@@ -61,8 +61,9 @@ var (
 
 var GoModReplaceAllowed bool
 
-func (o Ops) Vet() error {
-	ctx := context.Background()
+func (o Ops) Vet() error { return o.vet(context.Background()) }
+
+func (o Ops) vet(ctx context.Context) error {
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -119,7 +120,7 @@ func (o Ops) Vet() error {
 	}
 
 	// analyzers (all modules)
-	if err := runAnalyzers(mods); err != nil {
+	if err := runAnalyzers(ctx, mods); err != nil {
 		return err
 	}
 
@@ -130,8 +131,9 @@ func (o Ops) Vet() error {
 	return nil
 }
 
-func (Ops) Test() error {
-	ctx := context.Background()
+func (o Ops) Test() error { return o.test(context.Background()) }
+
+func (Ops) test(ctx context.Context) error {
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -139,8 +141,9 @@ func (Ops) Test() error {
 	return runTests(ctx, mods, false)
 }
 
-func (o Ops) Fix() error {
-	ctx := context.Background()
+func (o Ops) Fix() error { return o.fix(context.Background()) }
+
+func (o Ops) fix(ctx context.Context) error {
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -173,7 +176,7 @@ func (o Ops) Fix() error {
 	}
 
 	// fixable analyzers (all modules)
-	return runFixAnalyzers(mods)
+	return runFixAnalyzers(ctx, mods)
 }
 
 func (Ops) Lint() error {
@@ -209,38 +212,51 @@ func (Ops) Cov() error {
 		"-html="+coverOut.Path())
 }
 
+// Check runs vet, compile, and test in a clean tree.
+// The compile parameter is called between vet and test.
+// Pass nil to skip compilation.
+func Check(compile func(context.Context) error) error {
+	return InCleanTree(func(ctx context.Context) error {
+		o := Ops{}
+		if err := o.vet(ctx); err != nil {
+			return err
+		}
+		if compile != nil {
+			if err := compile(ctx); err != nil {
+				return err
+			}
+		}
+		return o.test(ctx)
+	})
+}
+
 // InCleanTree extracts the committed git tree into a
 // temporary directory and runs fn there. This ensures checks
 // run against committed state only.
 var InCleanTree = inCleanTree
 
-func inCleanTree(fn func() error) error {
+func inCleanTree(fn func(context.Context) error) error {
 	ctx := context.Background()
-	tmp, err := os.MkdirTemp("", "op-check-")
+	tmp, err := Source.Temp(ctx, "op-check/")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmp)
+	defer Source.RemoveAll(ctx, tmp.Path())
 
 	// Extract committed tree into temp dir.
 	archive := command.NewReader(ctx,
 		Source, "git", "archive", "HEAD")
-	tar := command.NewWriter(ctx,
-		Source.Unshell(), "tar", "-xf", "-", "-C", tmp)
-	if _, err = io.Copy(tar, archive); err != nil {
+	if _, err = io.Copy(tmp, archive); err != nil {
 		return fmt.Errorf("git archive: %w", err)
 	}
-	archive.Close()
-	tar.Close()
+	if err = archive.Close(); err != nil {
+		return fmt.Errorf("archive close: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return fmt.Errorf("temp close: %w", err)
+	}
 
-	orig, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getwd: %w", err)
-	}
-	if err = os.Chdir(tmp); err != nil {
-		return fmt.Errorf("chdir: %w", err)
-	}
-	defer os.Chdir(orig)
+	ctx = fs.WithWorkDir(ctx, tmp.Path())
 
 	// Init git repo for diffCheck.
 	err = Source.Exec(ctx, "git", "init")
@@ -259,7 +275,7 @@ func inCleanTree(fn func() error) error {
 		return fmt.Errorf("git commit: %w", err)
 	}
 
-	return fn()
+	return fn(ctx)
 }
 
 func modules(ctx context.Context) ([]string, error) {
@@ -344,9 +360,16 @@ func diffCheck(ctx context.Context, step string) error {
 	return nil
 }
 
+// DevNull returns the platform-appropriate null device path.
+func DevNull(os string) string {
+	if os == "windows" {
+		return "NUL"
+	}
+	return "/dev/null"
+}
+
 func installGoimports(ctx context.Context) error {
-	err := command.Do(ctx, Builder.Unshell(),
-		"goimports", "-l", os.DevNull)
+	err := command.Do(ctx, Builder.Unshell(), "goimports", "--help")
 	if command.NotFound(err) {
 		err = Builder.Exec(ctx,
 			"go", "install",
@@ -359,10 +382,15 @@ func installGoimports(ctx context.Context) error {
 	return nil
 }
 
-func runAnalyzers(mods []string) error {
+func runAnalyzers(ctx context.Context, mods []string) error {
+	workDir := fs.WorkDir(ctx)
 	for _, mod := range mods {
+		dir := mod
+		if workDir != "" {
+			dir = path.Join(workDir, mod)
+		}
 		pkgs, err := packages.Load(&packages.Config{
-			Dir:   mod,
+			Dir:   dir,
 			Mode:  packages.LoadAllSyntax,
 			Tests: true,
 		}, "./...")
@@ -391,10 +419,15 @@ func runAnalyzers(mods []string) error {
 	return nil
 }
 
-func runFixAnalyzers(mods []string) error {
+func runFixAnalyzers(ctx context.Context, mods []string) error {
+	workDir := fs.WorkDir(ctx)
 	for _, mod := range mods {
+		dir := mod
+		if workDir != "" {
+			dir = path.Join(workDir, mod)
+		}
 		pkgs, err := packages.Load(&packages.Config{
-			Dir:   mod,
+			Dir:   dir,
 			Mode:  packages.LoadAllSyntax,
 			Tests: true,
 		}, "./...")
@@ -414,7 +447,7 @@ func runFixAnalyzers(mods []string) error {
 			return fmt.Errorf(
 				"run fix analyzers in %s: %w", mod, err)
 		}
-		if err := applyFixes(pkgs, graph); err != nil {
+		if err := applyFixes(ctx, pkgs, graph); err != nil {
 			return fmt.Errorf("apply fixes in %s: %w", mod, err)
 		}
 	}
@@ -422,6 +455,7 @@ func runFixAnalyzers(mods []string) error {
 }
 
 func applyFixes(
+	ctx context.Context,
 	pkgs []*packages.Package,
 	graph *gochecker.Graph,
 ) error {
@@ -454,7 +488,7 @@ func applyFixes(
 	}
 
 	for filename, edits := range fileEdits {
-		content, err := os.ReadFile(filename)
+		content, err := Builder.ReadFile(ctx, filename)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", filename, err)
 		}
@@ -465,7 +499,8 @@ func applyFixes(
 			content = slices.Replace(
 				content, e.start, e.end, e.newText...)
 		}
-		if err := os.WriteFile(filename, content, 0644); err != nil {
+		err = Builder.WriteFile(ctx, filename, content)
+		if err != nil {
 			return fmt.Errorf("write %s: %w", filename, err)
 		}
 	}

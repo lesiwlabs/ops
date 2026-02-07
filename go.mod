@@ -11,7 +11,7 @@ require (
 	lesiw.io/command v0.0.0-20260102111911-9b5a01e7c56b
 	lesiw.io/defers v0.9.0
 	lesiw.io/errcheck v1.0.0
-	lesiw.io/fs v0.5.0
+	lesiw.io/fs v0.6.0
 	lesiw.io/linelen v0.2.0
 	lesiw.io/ops v0.14.0
 	lesiw.io/plscheck v0.20.0

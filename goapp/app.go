@@ -34,19 +34,12 @@ var Name string
 var Versionfile = "version.txt"
 
 func (op Ops) Check() error {
-	return golang.InCleanTree(func() error {
-		if err := op.Vet(); err != nil {
-			return err
-		}
-		if err := op.Compile(); err != nil {
-			return err
-		}
-		return op.Test()
-	})
+	return golang.Check(op.compile)
 }
 
-func (Ops) Compile() error {
-	ctx := context.Background()
+func (o Ops) Compile() error { return o.compile(context.Background()) }
+
+func (Ops) compile(ctx context.Context) error {
 	for _, t := range Targets {
 		ctx := command.WithEnv(ctx, map[string]string{
 			"CGO_ENABLED": "0",
@@ -54,7 +47,10 @@ func (Ops) Compile() error {
 			"GOARCH":      t.Goarch,
 		})
 		err := golang.Builder.Exec(ctx,
-			"go", "build", "-o", "/dev/null", ".")
+			"go", "build",
+			"-o", golang.DevNull(golang.Builder.OS(ctx)),
+			".",
+		)
 		if err != nil {
 			return err
 		}
