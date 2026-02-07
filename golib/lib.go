@@ -39,15 +39,15 @@ var checkErr error
 
 func (op Ops) Check() error {
 	checkOnce.Do(func() {
-		if err := op.Lint(); err != nil {
+		if err := op.Vet(); err != nil {
 			checkErr = err
 			return
 		}
-		if err := op.Test(); err != nil {
+		if err := op.Compile(); err != nil {
 			checkErr = err
 			return
 		}
-		checkErr = op.Compile()
+		checkErr = op.Test()
 	})
 	return checkErr
 }
@@ -69,10 +69,6 @@ func (Ops) Compile() error {
 		}
 	}
 	return nil
-}
-
-func (op Ops) Lint() error {
-	return op.Ops.Lint()
 }
 
 func (op Ops) Bump() error {

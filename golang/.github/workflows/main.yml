@@ -1,9 +1,61 @@
 name: main
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, next]
+  pull_request:
 jobs:
-  op:
+  gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - run: '"$(wget -O- lesiw.io/op | sh)"'
+  test:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            go: stable
+          - runner: macos-latest
+            go: oldstable
+          - runner: windows-latest
+            go: stable
+          - runner: windows-latest
+            go: oldstable
+          - runner: ubuntu-latest
+            go: oldstable
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: '"$(wget -O- lesiw.io/op | sh)"'
+  alpine:
+    needs: gate
+    strategy:
+      matrix:
+        go: [stable, oldstable]
+    runs-on: ubuntu-latest
+    container: golang:${{ matrix.go }}-alpine
+    steps:
+      - run: apk add --no-cache git wget
+      - uses: actions/checkout@v4
+      - run: '"$(wget -O- lesiw.io/op | sh)"'
+  freebsd:
+    needs: gate
+    strategy:
+      matrix:
+        go: [stable, oldstable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: vmactions/freebsd-vm@v1
+        with:
+          usesh: true
+          prepare: pkg install -y go wget
+          run: '"$(wget -O- lesiw.io/op | sh)"'

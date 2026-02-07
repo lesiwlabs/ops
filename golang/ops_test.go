@@ -1,6 +1,7 @@
 package golang
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -19,58 +20,94 @@ func swap[T any](t *testing.T, ptr *T, val T) {
 	t.Cleanup(func() { *ptr = old })
 }
 
-func TestTest(t *testing.T) {
+func setupMock(t *testing.T, programs ...string) *mock.Machine {
+	t.Helper()
+	ctx := context.Background()
 	m := new(mock.Machine)
 	m.SetOS("linux")
 	m.SetArch("amd64")
-	sh := command.Shell(m, "go", "gotestsum", "git")
+	sh := command.Shell(m, programs...)
+	if err := sh.WriteFile(ctx, "go.mod",
+		[]byte("module test\n")); err != nil {
+		t.Fatal(err)
+	}
 	swap(t, &Builder, sh)
 	swap(t, &Source, sh)
-	swap(t, &GoTestSum, sh)
+	return m
+}
+
+func TestTest(t *testing.T) {
+	m := setupMock(t, "go", "git")
 
 	Ops{}.Test()
 
-	got := mock.Calls(m, "gotestsum")
+	got := mock.Calls(m, "go")
 	want := []mock.Call{
-		{Args: []string{"gotestsum", "./...", "--", "-race"}},
+		{
+			Args: []string{"go", "-C", ".", "test",
+				"-count=1", "-shuffle=on", "./..."},
+			Env: map[string]string{"CGO_ENABLED": "0"},
+		},
+		{
+			Args: []string{"go", "-C", ".", "test",
+				"-count=1", "-shuffle=on", "-race", "./..."},
+			Env: map[string]string{"CGO_ENABLED": "1"},
+		},
 	}
 	if !cmp.Equal(want, got) {
-		t.Errorf("gotestsum calls: -want +got\n%s", cmp.Diff(want, got))
+		t.Errorf("go calls: -want +got\n%s", cmp.Diff(want, got))
 	}
 }
 
 func TestLint(t *testing.T) {
-	m := new(mock.Machine)
-	m.SetOS("linux")
-	m.SetArch("amd64")
-	sh := command.Shell(m, "go", "git")
-	swap(t, &Builder, sh)
-	swap(t, &Source, sh)
+	setupMock(t, "go", "git")
 
 	Ops{}.Lint()
-
-	// Lint now only checks for go.mod replace directives (if not allowed)
-	// No external linter commands are executed
 }
 
 func TestCov(t *testing.T) {
-	m := new(mock.Machine)
-	m.SetOS("linux")
-	m.SetArch("amd64")
-	sh := command.Shell(m, "go", "gotestsum", "git")
-	swap(t, &Builder, sh)
-	swap(t, &Source, sh)
+	m := setupMock(t, "go", "git")
 
 	Ops{}.Cov()
 
 	got := mock.Calls(m, "go")
-	if len(got) < 2 {
-		t.Fatalf("expected at least 2 go calls, got %d", len(got))
+	want := []mock.Call{
+		{Args: []string{"go", "test", "-coverprofile",
+			got[0].Args[3], "./..."}},
+		{Args: []string{"go", "tool", "cover",
+			"-html=" + got[0].Args[3]}},
 	}
-	if got[0].Args[0] != "go" || got[0].Args[1] != "test" {
-		t.Errorf("first call should be go test, got %v", got[0].Args)
+	if !cmp.Equal(want, got) {
+		t.Errorf("go calls: -want +got\n%s", cmp.Diff(want, got))
 	}
-	if got[1].Args[0] != "go" || got[1].Args[1] != "tool" {
-		t.Errorf("second call should be go tool, got %v", got[1].Args)
+}
+
+func TestAnalyzers(t *testing.T) {
+	got := Analyzers()
+	if len(got) == 0 {
+		t.Error("Analyzers() returned empty list")
+	}
+	names := make(map[string]bool)
+	for _, a := range got {
+		if names[a.Name] {
+			t.Errorf("duplicate analyzer: %s", a.Name)
+		}
+		names[a.Name] = true
+	}
+}
+
+func TestFixAnalyzers(t *testing.T) {
+	got := FixAnalyzers()
+	if len(got) == 0 {
+		t.Error("FixAnalyzers() returned empty list")
+	}
+	all := make(map[string]bool)
+	for _, a := range Analyzers() {
+		all[a.Name] = true
+	}
+	for _, a := range got {
+		if !all[a.Name] {
+			t.Errorf("fix analyzer %q not in Analyzers()", a.Name)
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package golib
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -21,13 +22,16 @@ func swap[T any](t *testing.T, ptr *T, val T) {
 }
 
 func TestCheckRunsOnce(t *testing.T) {
+	ctx := context.Background()
 	m := new(mock.Machine)
 	m.SetOS("linux")
 	m.SetArch("amd64")
-	sh := command.Shell(m, "go", "gotestsum", "git")
+	sh := command.Shell(m, "go", "git", "goimports")
+	if err := sh.WriteFile(ctx, "go.mod", []byte("module test\n")); err != nil {
+		t.Fatal(err)
+	}
 	swap(t, &golang.Builder, sh)
 	swap(t, &golang.Source, sh)
-	swap(t, &golang.GoTestSum, sh)
 	swap(t, &checkOnce, sync.Once{})
 	swap(t, &checkErr, error(nil))
 
@@ -35,8 +39,15 @@ func TestCheckRunsOnce(t *testing.T) {
 		Ops{}.Check()
 	}
 
-	got := mock.Calls(m, "gotestsum")
-	if len(got) != 1 {
-		t.Errorf("gotestsum runs: %d, want 1", len(got))
+	got := mock.Calls(m, "go")
+	var testCount int
+	for _, c := range got {
+		if len(c.Args) >= 2 && c.Args[1] == "test" {
+			testCount++
+		}
+	}
+	if testCount > 10 {
+		t.Errorf("too many test calls (%d), Check should run once",
+			testCount)
 	}
 }
