@@ -4,13 +4,14 @@
 package goapp
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"lesiw.io/cmdio/sub"
-	"lesiw.io/cmdio/sys"
-	"lesiw.io/cmdio/x/busybox"
+	"lesiw.io/command"
+	"lesiw.io/command/sub"
+	"lesiw.io/command/sys"
 	"lesiw.io/defers"
 )
 
@@ -22,26 +23,23 @@ func init() {
 }
 
 func runinit() (err error) {
-	rnr, err = busybox.Runner()
-	if err != nil {
-		return fmt.Errorf("could not create busybox runner: %w", err)
-	}
-	rnr = rnr.WithCommand("go", sys.Runner())
+	ctx := context.Background()
+	sh := command.Shell(sys.Machine(), "go", "which", "base64")
 
-	r, err := rnr.Get("which", "spkez")
+	which, err := sh.Read(ctx, "which", "spkez")
 	if err != nil {
-		err := rnr.Run("go", "install", "lesiw.io/spkez@latest")
+		err := sh.Exec(ctx, "go", "install", "lesiw.io/spkez@latest")
 		if err != nil {
 			return fmt.Errorf("could not install spkez: %w", err)
 		}
-		r, err = rnr.Get("which", "spkez")
+		which, err = sh.Read(ctx, "which", "spkez")
 		if err != nil {
 			return fmt.Errorf("could not find spkez: %w", err)
 		}
 	}
-	spkez = sub.WithRunner(sys.Runner(), r.Out)
+	spkez = command.Shell(sub.Machine(sys.Machine(), which), "spkez")
 
-	r, err = spkez.Get("get", "k8s/config")
+	config, err := spkez.Read(ctx, "spkez", "get", "k8s/config")
 	if err != nil {
 		return fmt.Errorf("could not get kubeconfig: %w", err)
 	}
@@ -54,7 +52,7 @@ func runinit() (err error) {
 	if err := os.Chmod(file.Name(), 0600); err != nil {
 		return fmt.Errorf("could not set permissions on temp file: %w", err)
 	}
-	if _, err := file.WriteString(r.Out + "\n"); err != nil {
+	if _, err := file.WriteString(config + "\n"); err != nil {
 		return fmt.Errorf("could not write to temp file: %w", err)
 	}
 	k8scfg, err = filepath.Abs(file.Name())
@@ -62,12 +60,17 @@ func runinit() (err error) {
 		return fmt.Errorf("could not get full path of temp file: %w", err)
 	}
 
-	ctr = sub.WithRunner(sys.Runner(), "docker")
-	k8s = sub.WithRunner(ctr,
-		"run", "-i", "--rm",
-		"-v", k8scfg+":/.kube/config",
-		"bitnami/kubectl",
+	ctr = command.Shell(sub.Machine(sys.Machine(), "docker"), "docker")
+	k8s = command.Shell(
+		sub.Machine(
+			ctr.Unshell(),
+			"run", "-i", "--rm",
+			"-v", k8scfg+":/.kube/config",
+			"bitnami/kubectl",
+		),
+		"kubectl",
 	)
+	rnr = sh
 
 	return nil
 }

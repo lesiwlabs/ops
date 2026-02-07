@@ -1,28 +1,36 @@
 package golang
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
-	"lesiw.io/cmdio"
-	"lesiw.io/cmdio/sub"
+	"lesiw.io/command"
 )
 
-var GolangCi = sync.OnceValue(func() *cmdio.Runner {
-	if which, err := Builder().Get("which", "golangci-lint"); err == nil {
-		return Builder().WithCommander(sub.New(which.Out).Commander)
-	}
-	// https://github.com/golangci/golangci-lint/issues/966
-	Builder().MustRun("go", "install",
-		"github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest")
-	which := Builder().MustGet("which", "golangci-lint")
-	return Builder().WithCommander(sub.New(which.Out).Commander)
-})
+func installGotestsum(ctx context.Context, sh *command.Sh) error {
+	return sh.Exec(ctx, "go", "install", "gotest.tools/gotestsum@latest")
+}
 
-var GoTestSum = sync.OnceValue(func() *cmdio.Runner {
-	if which, err := Builder().Get("which", "gotestsum"); err == nil {
-		return Builder().WithCommander(sub.New(which.Out).Commander)
-	}
-	Builder().MustRun("go", "install", "gotest.tools/gotestsum@latest")
-	which := Builder().MustGet("which", "gotestsum")
-	return Builder().WithCommander(sub.New(which.Out).Commander)
-})
+var GoTestSum = func() *command.Sh {
+	sh := Builder
+	var install = sync.OnceValue(func() error {
+		ctx := context.Background()
+		err := command.Do(ctx, sh.Unshell(), "gotestsum", "--version")
+		if command.NotFound(err) {
+			return installGotestsum(ctx, sh)
+		}
+		return err
+	})
+
+	sh.HandleFunc("gotestsum", func(ctx context.Context, args ...string) command.Buffer {
+		if err := install(); err != nil {
+			return command.Fail(&command.Error{
+				Err:  fmt.Errorf("failed to install gotestsum: %w", err),
+				Code: 1,
+			})
+		}
+		return sh.Unshell().Command(ctx, args...)
+	})
+	return sh
+}()

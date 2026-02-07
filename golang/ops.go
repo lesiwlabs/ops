@@ -1,53 +1,104 @@
 package golang
 
 import (
-	"sync"
+	"bufio"
+	"context"
+	"fmt"
+	"strings"
 
-	"labs.lesiw.io/ops/git"
-	"lesiw.io/cmdio"
-	"lesiw.io/cmdio/sys"
-	"lesiw.io/cmdio/x/busybox"
+	"lesiw.io/command"
+	"lesiw.io/command/sys"
+	"lesiw.io/fs/path"
 )
 
 type Ops struct{}
 
-var Source = sync.OnceValue(func() *cmdio.Runner {
-	if rnr, err := busybox.Runner(); err != nil {
-		panic(err)
-	} else {
-		return rnr.WithCommand("git",
-			rnr.WithCommander(sys.Runner().Commander))
-	}
-})
-var Builder = sync.OnceValue(func() *cmdio.Runner {
-	if rnr, err := git.WorktreeRunner(Source()); err != nil {
-		panic(err)
-	} else {
-		return rnr.WithCommand("go",
-			rnr.WithCommander(sys.Runner().Commander))
-	}
-})
+var (
+	Source  = command.Shell(sys.Machine(), "git")
+	Builder = command.Shell(sys.Machine(), "go")
+)
+
 var GoModReplaceAllowed bool
 
-func (Ops) Test() {
-	GoTestSum().MustRun("./...", "--", "-race")
+func (Ops) Test() error {
+	ctx := context.Background()
+	return GoTestSum.Exec(ctx, "gotestsum", "./...", "--", "-race")
 }
 
-func (Ops) Lint() {
-	GolangCi().MustRun("run")
+func (Ops) Lint() error {
+	ctx := context.Background()
 	if !GoModReplaceAllowed {
-		r := Builder().MustGet("find", ".", "-type", "f", "-name", "go.mod",
-			"-exec",
-			"grep", "-n", "^replace", "go.mod", "/dev/null", ";")
-		if r.Out != "" {
-			panic("replace directive found in go.mod\n" + r.Out)
+		return checkGoModReplace(ctx, Builder)
+	}
+	return nil
+}
+
+func (Ops) Cov() error {
+	ctx := context.Background()
+	tmpDir, err := Builder.Temp(ctx, "gocover/")
+	if err != nil {
+		return err
+	}
+	defer tmpDir.Close()
+	defer Builder.RemoveAll(ctx, tmpDir.Path())
+
+	coverOutPath := path.Join(tmpDir.Path(), "cover.out")
+	coverOut, err := Builder.Create(ctx, coverOutPath)
+	if err != nil {
+		return err
+	}
+	defer coverOut.Close()
+
+	if err := Builder.Exec(ctx, "go", "test", "-coverprofile", coverOut.Path(), "./..."); err != nil {
+		return err
+	}
+	return Builder.Exec(ctx, "go", "tool", "cover", "-html="+coverOut.Path())
+}
+
+func checkGoModReplace(ctx context.Context, sh *command.Sh) error {
+	var foundReplace []string
+	err := checkGoModReplaceDir(ctx, sh, ".", &foundReplace)
+	if err != nil {
+		return err
+	}
+	if len(foundReplace) > 0 {
+		return fmt.Errorf("replace directive found in go.mod\n%s", strings.Join(foundReplace, "\n"))
+	}
+	return nil
+}
+
+func checkGoModReplaceDir(ctx context.Context, sh *command.Sh, dir string, foundReplace *[]string) error {
+	for entry, err := range sh.ReadDir(ctx, dir) {
+		if err != nil {
+			return fmt.Errorf("failed to read directory %s: %w", dir, err)
+		}
+		entryPath := path.Join(dir, entry.Name())
+		if entry.IsDir() {
+			if err := checkGoModReplaceDir(ctx, sh, entryPath, foundReplace); err != nil {
+				return err
+			}
+			continue
+		}
+		if entry.Name() != "go.mod" {
+			continue
+		}
+		f, err := sh.Open(ctx, entryPath)
+		if err != nil {
+			return fmt.Errorf("failed to open %s: %w", entryPath, err)
+		}
+		defer f.Close()
+		scn := bufio.NewScanner(f)
+		lineNum := 0
+		for scn.Scan() {
+			lineNum++
+			line := scn.Text()
+			if strings.HasPrefix(strings.TrimSpace(line), "replace") {
+				*foundReplace = append(*foundReplace, fmt.Sprintf("%s:%d:%s", entryPath, lineNum, line))
+			}
+		}
+		if err := scn.Err(); err != nil {
+			return fmt.Errorf("failed to scan %s: %w", entryPath, err)
 		}
 	}
-}
-
-func (Ops) Cov() {
-	dir := Builder().MustGet("mktemp", "-d").Out
-	defer Builder().Run("rm", "-rf", dir)
-	Builder().MustRun("go", "test", "-coverprofile", dir+"/cover.out", "./...")
-	Builder().MustRun("go", "tool", "cover", "-html="+dir+"/cover.out")
+	return nil
 }

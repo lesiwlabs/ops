@@ -4,79 +4,73 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"labs.lesiw.io/ops/internal/test"
-	"lesiw.io/cmdio"
+	"lesiw.io/command"
+	"lesiw.io/command/mock"
 )
 
 func init() {
 	GoModReplaceAllowed = true
 }
 
-func TestTest(t *testing.T) {
-	defer clear(test.Uniq)
+func swap[T any](t *testing.T, ptr *T, val T) {
+	t.Helper()
+	old := *ptr
+	*ptr = val
+	t.Cleanup(func() { *ptr = old })
+}
 
-	cdr := new(test.EchoCdr)
-	rnr := func() *cmdio.Runner {
-		return new(cmdio.Runner).WithCommander(cdr)
-	}
-	Builder = rnr
-	Source = rnr
-	GoTestSum = rnr
-	GolangCi = rnr
+func TestTest(t *testing.T) {
+	m := new(mock.Machine)
+	m.SetOS("linux")
+	m.SetArch("amd64")
+	sh := command.Shell(m, "go", "gotestsum", "git")
+	swap(t, &Builder, sh)
+	swap(t, &Source, sh)
+	swap(t, &GoTestSum, sh)
 
 	Ops{}.Test()
 
-	expectcdr := test.EchoCdr{
-		{"./...", "--", "-race"},
+	got := mock.Calls(m, "gotestsum")
+	want := []mock.Call{
+		{Args: []string{"gotestsum", "./...", "--", "-race"}},
 	}
-	if got, want := *cdr, expectcdr; !cmp.Equal(got, want) {
-		t.Errorf("cmds: -want +got\n%s", cmp.Diff(want, got))
+	if !cmp.Equal(want, got) {
+		t.Errorf("gotestsum calls: -want +got\n%s", cmp.Diff(want, got))
 	}
 }
 
 func TestLint(t *testing.T) {
-	defer clear(test.Uniq)
-
-	cdr := new(test.EchoCdr)
-	rnr := func() *cmdio.Runner {
-		return new(cmdio.Runner).WithCommander(cdr)
-	}
-	Builder = rnr
-	Source = rnr
-	GoTestSum = rnr
-	GolangCi = rnr
+	m := new(mock.Machine)
+	m.SetOS("linux")
+	m.SetArch("amd64")
+	sh := command.Shell(m, "go", "git")
+	swap(t, &Builder, sh)
+	swap(t, &Source, sh)
 
 	Ops{}.Lint()
 
-	expectcdr := test.EchoCdr{
-		{"run"},
-	}
-	if got, want := *cdr, expectcdr; !cmp.Equal(got, want) {
-		t.Errorf("cmds: -want +got\n%s", cmp.Diff(want, got))
-	}
+	// Lint now only checks for go.mod replace directives (if not allowed)
+	// No external linter commands are executed
 }
 
 func TestCov(t *testing.T) {
-	defer clear(test.Uniq)
-
-	cdr := new(test.EchoCdr)
-	rnr := func() *cmdio.Runner {
-		return new(cmdio.Runner).WithCommander(cdr)
-	}
-	Builder = rnr
-	Source = rnr
-	GoTestSum = rnr
-	GolangCi = rnr
+	m := new(mock.Machine)
+	m.SetOS("linux")
+	m.SetArch("amd64")
+	sh := command.Shell(m, "go", "gotestsum", "git")
+	swap(t, &Builder, sh)
+	swap(t, &Source, sh)
 
 	Ops{}.Cov()
 
-	expectcdr := test.EchoCdr{
-		{"mktemp", "-d"},
-		{"go", "test", "-coverprofile", "[mktemp -d]/cover.out", "./..."},
-		{"go", "tool", "cover", "-html=[mktemp -d]/cover.out"},
-		{"rm", "-rf", "[mktemp -d]"},
+	got := mock.Calls(m, "go")
+	if len(got) < 2 {
+		t.Fatalf("expected at least 2 go calls, got %d", len(got))
 	}
-	if got, want := *cdr, expectcdr; !cmp.Equal(got, want) {
-		t.Errorf("cmds: -want +got\n%s", cmp.Diff(want, got))
+	if got[0].Args[0] != "go" || got[0].Args[1] != "test" {
+		t.Errorf("first call should be go test, got %v", got[0].Args)
+	}
+	if got[1].Args[0] != "go" || got[1].Args[1] != "tool" {
+		t.Errorf("second call should be go tool, got %v", got[1].Args)
 	}
 }

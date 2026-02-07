@@ -1,13 +1,15 @@
 package golib
 
 import (
+	"context"
 	"fmt"
-	"runtime"
+	"strings"
 	"sync"
 
 	"labs.lesiw.io/ops/golang"
-	"lesiw.io/cmdio"
-	"lesiw.io/cmdio/sys"
+	"lesiw.io/command"
+	"lesiw.io/command/sub"
+	"lesiw.io/fs/path"
 )
 
 type Target struct {
@@ -33,62 +35,99 @@ var Targets = []Target{
 type Ops struct{ golang.Ops }
 
 var checkOnce sync.Once
+var checkErr error
 
-func (op Ops) Check() {
+func (op Ops) Check() error {
 	checkOnce.Do(func() {
-		op.Lint()
-		op.Test()
-		op.Compile()
+		if err := op.Lint(); err != nil {
+			checkErr = err
+			return
+		}
+		if err := op.Test(); err != nil {
+			checkErr = err
+			return
+		}
+		checkErr = op.Compile()
 	})
+	return checkErr
 }
 
-func (op Ops) Build() {
-	op.Check()
+func (op Ops) Build() error {
+	return op.Check()
 }
 
-func (Ops) Compile() {
+func (Ops) Compile() error {
+	ctx := context.Background()
 	for _, t := range Targets {
-		golang.Builder().WithEnv(map[string]string{
+		ctx := command.WithEnv(ctx, map[string]string{
 			"CGO_ENABLED": "0",
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
-		}).MustRun("go", "build", "-o", "/dev/null", "./...")
+		})
+		if err := golang.Builder.Exec(ctx, "go", "build", "-o", "/dev/null", "./..."); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (op Ops) Lint() {
-	op.Ops.Lint()
-	if runtime.GOOS != "windows" {
-		golang.Builder().MustRun("go", "run",
-			"github.com/bobg/mingo/cmd/mingo@latest", "-check")
-	}
+func (op Ops) Lint() error {
+	return op.Ops.Lint()
 }
 
-func (op Ops) Bump() {
-	op.Check()
-	if _, err := golang.Source().Get("which", "bump"); err != nil {
-		golang.Builder().MustRun("go", "install", "lesiw.io/bump@latest")
+func (op Ops) Bump() error {
+	if err := op.Check(); err != nil {
+		return err
 	}
-	version := cmdio.MustGetPipe(
-		golang.Source().Command("git", "describe", "--abbrev=0", "--tags"),
-		golang.Source().WithCommand("bump", sys.Runner()).
-			Command("bump", "-s", "1"),
-	).Out
-	golang.Source().MustRun("git", "tag", version)
-	golang.Source().MustRun("git", "push")
-	golang.Source().MustRun("git", "push", "--tags")
+	ctx := context.Background()
+	_, err := golang.Source.Read(ctx, "which", "bump")
+	if err != nil {
+		if err := golang.Builder.Exec(ctx, "go", "install", "lesiw.io/bump@latest"); err != nil {
+			return err
+		}
+	}
+	which, err := golang.Source.Read(ctx, "which", "bump")
+	if err != nil {
+		return err
+	}
+	bumpsh := command.Shell(sub.Machine(golang.Source.Unshell(), path.Dir(which)), "bump")
+
+	var versionBuf strings.Builder
+	_, err = command.Copy(
+		&versionBuf,
+		command.NewReader(ctx, golang.Source, "git", "describe", "--abbrev=0", "--tags"),
+		command.NewStream(ctx, bumpsh, "bump", "-s", "1"),
+	)
+	if err != nil {
+		return err
+	}
+	version := strings.TrimSpace(versionBuf.String())
+
+	if err := golang.Source.Exec(ctx, "git", "tag", version); err != nil {
+		return err
+	}
+	if err := golang.Source.Exec(ctx, "git", "push"); err != nil {
+		return err
+	}
+	return golang.Source.Exec(ctx, "git", "push", "--tags")
 }
 
-func (Ops) ProxyPing() {
+func (Ops) ProxyPing() error {
+	ctx := context.Background()
 	var ref string
-	tag, err := golang.Source().Get("git", "describe", "--exact-match",
-		"--tags")
+	tag, err := golang.Source.Read(ctx, "git", "describe", "--exact-match", "--tags")
 	if err == nil {
-		ref = tag.Out
+		ref = tag
 	} else {
-		ref = golang.Source().MustGet("git", "rev-parse", "HEAD").Out
+		ref, err = golang.Source.Read(ctx, "git", "rev-parse", "HEAD")
+		if err != nil {
+			return err
+		}
 	}
-	mod := golang.Builder().MustGet("go", "list", "-m").Out
-	golang.Builder().MustRun("go", "list", "-m",
+	mod, err := golang.Builder.Read(ctx, "go", "list", "-m")
+	if err != nil {
+		return err
+	}
+	return golang.Builder.Exec(ctx, "go", "list", "-m",
 		fmt.Sprintf("%s@%s", mod, ref))
 }

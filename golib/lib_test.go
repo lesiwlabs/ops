@@ -1,41 +1,42 @@
 package golib
 
 import (
-	"slices"
+	"sync"
 	"testing"
 
 	"labs.lesiw.io/ops/golang"
-	"labs.lesiw.io/ops/internal/test"
-	"lesiw.io/cmdio"
+	"lesiw.io/command"
+	"lesiw.io/command/mock"
 )
 
 func init() {
 	golang.GoModReplaceAllowed = true
 }
 
-func TestCheckRunsOnce(t *testing.T) {
-	defer clear(test.Uniq)
+func swap[T any](t *testing.T, ptr *T, val T) {
+	t.Helper()
+	old := *ptr
+	*ptr = val
+	t.Cleanup(func() { *ptr = old })
+}
 
-	cdr := new(test.EchoCdr)
-	rnr := func() *cmdio.Runner {
-		return new(cmdio.Runner).WithCommander(cdr)
-	}
-	golang.Builder = rnr
-	golang.Source = rnr
-	golang.GoTestSum = rnr
-	golang.GolangCi = rnr
+func TestCheckRunsOnce(t *testing.T) {
+	m := new(mock.Machine)
+	m.SetOS("linux")
+	m.SetArch("amd64")
+	sh := command.Shell(m, "go", "gotestsum", "git")
+	swap(t, &golang.Builder, sh)
+	swap(t, &golang.Source, sh)
+	swap(t, &golang.GoTestSum, sh)
+	swap(t, &checkOnce, sync.Once{})
+	swap(t, &checkErr, error(nil))
 
 	for range 3 {
 		Ops{}.Check()
 	}
 
-	var lintcmds int
-	for _, cmd := range *cdr {
-		if slices.Equal(cmd, []string{"run"}) {
-			lintcmds++
-		}
-	}
-	if got, want := lintcmds, 1; got != want {
-		t.Errorf("golangci-lint runs: %d, want %d", got, want)
+	got := mock.Calls(m, "gotestsum")
+	if len(got) != 1 {
+		t.Errorf("gotestsum runs: %d, want 1", len(got))
 	}
 }
