@@ -116,7 +116,7 @@ func (op Ops) createImage(app string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not create Dockerfile: %w", err)
 	}
-	defer func() { os.Remove(file.Name()) }()
+	defer func() { _ = os.Remove(file.Name()) }()
 	_, err = fmt.Fprintf(file, `FROM scratch
 COPY %s /app
 CMD [ "/app" ]
@@ -132,8 +132,10 @@ CMD [ "/app" ]
 		return "", fmt.Errorf("could not build container: %w", err)
 	}
 	_, err = io.Copy(
-		command.NewWriter(ctx, ctr, "docker", "login", "--password-stdin", "-u", "ll", "ctr.lesiw.dev"),
-		command.NewReader(ctx, spkez, "spkez", "get", "ctr.lesiw.dev/auth"),
+		command.NewWriter(ctx, ctr, "docker", "login",
+			"--password-stdin", "-u", "ll", "ctr.lesiw.dev"),
+		command.NewReader(ctx, spkez,
+			"spkez", "get", "ctr.lesiw.dev/auth"),
 	)
 	if err != nil {
 		return "", fmt.Errorf("could not docker login: %w", err)
@@ -340,14 +342,14 @@ func (op Ops) deployImage(img string) error {
 	if err != nil {
 		return fmt.Errorf("could not create temporary directory: %w", err)
 	}
-	defer func() { os.RemoveAll(chart) }()
+	defer func() { _ = os.RemoveAll(chart) }()
 	chart, err = filepath.Abs(chart)
 	if err != nil {
 		return fmt.Errorf("could not get full path of chart dir: %w", err)
 	}
 	err = os.WriteFile(
 		filepath.Join(chart, "Chart.yaml"),
-		[]byte(fmt.Sprintf(chartYaml, goapp.Name)),
+		fmt.Appendf(nil, chartYaml, goapp.Name),
 		0755,
 	)
 	if err != nil {
@@ -407,7 +409,8 @@ func (op Ops) deployImage(img string) error {
 	if err != nil {
 		contents, readErr := os.ReadFile(filepath.Join(tmpl, "chart.yaml"))
 		if readErr != nil {
-			contents = []byte(fmt.Sprintf("<error reading file: %s>", readErr))
+			contents = fmt.Appendf(nil,
+				"<error reading file: %s>", readErr)
 		}
 		return fmt.Errorf(
 			"could not helm install: %w\n---\nchart.yml:\n%s", err, contents,
@@ -480,7 +483,8 @@ func createPostgresRole(name string) error {
 		secretPass = randStr(32)
 		_, err = io.Copy(
 			command.NewWriter(ctx, k8s, "kubectl", "apply", "-f", "-"),
-			strings.NewReader(fmt.Sprintf(secretCfg, secretName, "secret", secretPass)),
+			strings.NewReader(fmt.Sprintf(
+				secretCfg, secretName, "secret", secretPass)),
 		)
 		if err != nil {
 			return fmt.Errorf("could not generate secret: %w", err)
@@ -526,7 +530,9 @@ $do$;
 	// goapp.Name is trusted in any case and could already be used
 	// for k8s config injection and other terrible things,
 	// so this isn't an immediate concern.
-	if err := pg.Exec(ctx, "psql", fmt.Sprintf(sql, name, secretPass)); err != nil {
+	err = pg.Exec(ctx,
+		"psql", fmt.Sprintf(sql, name, secretPass))
+	if err != nil {
 		return fmt.Errorf("could not create role: %w", err)
 	}
 	return nil

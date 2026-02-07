@@ -27,16 +27,21 @@ func TestCheckRunsOnce(t *testing.T) {
 	m.SetOS("linux")
 	m.SetArch("amd64")
 	sh := command.Shell(m, "go", "git", "goimports")
-	if err := sh.WriteFile(ctx, "go.mod", []byte("module test\n")); err != nil {
+	err := sh.WriteFile(ctx,
+		"go.mod", []byte("module test\n"))
+	if err != nil {
 		t.Fatal(err)
 	}
 	swap(t, &golang.Builder, sh)
 	swap(t, &golang.Source, sh)
 	swap(t, &checkOnce, sync.Once{})
-	swap(t, &checkErr, error(nil))
+	swap(t, &errCheck, error(nil))
 
 	for range 3 {
-		Ops{}.Check()
+		err = Ops{}.Check()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	got := mock.Calls(m, "go")

@@ -21,7 +21,8 @@ func (Ops) Secrets() {
 	ctx := context.Background()
 	for k, v := range Secrets {
 		_, err := io.Copy(
-			command.NewWriter(ctx, Shell, "gh", "-R", Repo, "secret", "set", k),
+			command.NewWriter(ctx, Shell,
+				"gh", "-R", Repo, "secret", "set", k),
 			command.NewReader(ctx, Shell, "spkez", "get", v),
 		)
 		if err != nil {

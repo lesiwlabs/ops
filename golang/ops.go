@@ -69,42 +69,43 @@ func (o Ops) Vet() error {
 
 	// go mod tidy (all modules)
 	for _, mod := range mods {
-		if err := Builder.Exec(ctx,
-			"go", "-C", mod, "mod", "tidy"); err != nil {
+		err = Builder.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		if err != nil {
 			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
 		}
 	}
-	if err := diffCheck(ctx, "go mod tidy"); err != nil {
+	if err = diffCheck(ctx, "go mod tidy"); err != nil {
 		return err
 	}
 
 	// goimports (runs on all files from root)
-	if err := installGoimports(ctx); err != nil {
+	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	if err := Builder.Exec(ctx, "goimports",
-		"-w", "-local", "lesiw.io,labs.lesiw.io", "."); err != nil {
+	err = Builder.Exec(ctx, "goimports",
+		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
+	if err != nil {
 		return fmt.Errorf("goimports: %w", err)
 	}
-	if err := diffCheck(ctx, "goimports"); err != nil {
+	if err = diffCheck(ctx, "goimports"); err != nil {
 		return err
 	}
 
 	// go fix (all modules)
 	for _, mod := range mods {
-		if err := Builder.Exec(ctx,
-			"go", "-C", mod, "fix", "./..."); err != nil {
+		err = Builder.Exec(ctx, "go", "-C", mod, "fix", "./...")
+		if err != nil {
 			return fmt.Errorf("go fix in %s: %w", mod, err)
 		}
 	}
-	if err := diffCheck(ctx, "go fix"); err != nil {
+	if err = diffCheck(ctx, "go fix"); err != nil {
 		return err
 	}
 
 	// go vet (all modules)
 	for _, mod := range mods {
-		if err := Builder.Exec(ctx,
-			"go", "-C", mod, "vet", "./..."); err != nil {
+		err = Builder.Exec(ctx, "go", "-C", mod, "vet", "./...")
+		if err != nil {
 			return fmt.Errorf("go vet in %s: %w", mod, err)
 		}
 	}
@@ -146,25 +147,26 @@ func (o Ops) Fix() error {
 
 	// go mod tidy (all modules)
 	for _, mod := range mods {
-		if err := Builder.Exec(ctx,
-			"go", "-C", mod, "mod", "tidy"); err != nil {
+		err = Builder.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		if err != nil {
 			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
 		}
 	}
 
 	// goimports (runs on all files from root)
-	if err := installGoimports(ctx); err != nil {
+	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	if err := Builder.Exec(ctx, "goimports",
-		"-w", "-local", "lesiw.io,labs.lesiw.io", "."); err != nil {
+	err = Builder.Exec(ctx, "goimports",
+		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
+	if err != nil {
 		return fmt.Errorf("goimports: %w", err)
 	}
 
 	// go fix (all modules)
 	for _, mod := range mods {
-		if err := Builder.Exec(ctx,
-			"go", "-C", mod, "fix", "./..."); err != nil {
+		err = Builder.Exec(ctx, "go", "-C", mod, "fix", "./...")
+		if err != nil {
 			return fmt.Errorf("go fix in %s: %w", mod, err)
 		}
 	}
@@ -197,8 +199,9 @@ func (Ops) Cov() error {
 	}
 	defer coverOut.Close()
 
-	if err := Builder.Exec(ctx, "go", "test",
-		"-coverprofile", coverOut.Path(), "./..."); err != nil {
+	err = Builder.Exec(ctx, "go", "test",
+		"-coverprofile", coverOut.Path(), "./...")
+	if err != nil {
 		return err
 	}
 	return Builder.Exec(ctx, "go", "tool", "cover",
@@ -288,12 +291,17 @@ func diffCheck(ctx context.Context, step string) error {
 }
 
 func installGoimports(ctx context.Context) error {
-	err := command.Do(ctx, Builder.Unshell(), "goimports", "-l")
+	err := command.Do(ctx, Builder.Unshell(),
+		"goimports", "-l", os.DevNull)
 	if command.NotFound(err) {
-		return Builder.Exec(ctx,
+		err = Builder.Exec(ctx,
 			"go", "install",
 			"golang.org/x/tools/cmd/goimports@latest")
+		if err != nil {
+			return err
+		}
 	}
+	Builder.Handle("goimports", Builder.Unshell())
 	return nil
 }
 

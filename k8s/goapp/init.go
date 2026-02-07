@@ -1,5 +1,4 @@
 //go:build !test
-// +build !test
 
 package goapp
 
@@ -47,7 +46,7 @@ func runinit() (err error) {
 	if err != nil {
 		return fmt.Errorf("could not create temp file: %w", err)
 	}
-	defers.Add(func() { os.Remove(file.Name()) })
+	defers.Add(func() { _ = os.Remove(file.Name()) })
 	defer file.Close()
 	if err := os.Chmod(file.Name(), 0600); err != nil {
 		return fmt.Errorf("could not set permissions on temp file: %w", err)

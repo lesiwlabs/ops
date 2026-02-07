@@ -35,21 +35,21 @@ var Targets = []Target{
 type Ops struct{ golang.Ops }
 
 var checkOnce sync.Once
-var checkErr error
+var errCheck error
 
 func (op Ops) Check() error {
 	checkOnce.Do(func() {
 		if err := op.Vet(); err != nil {
-			checkErr = err
+			errCheck = err
 			return
 		}
 		if err := op.Compile(); err != nil {
-			checkErr = err
+			errCheck = err
 			return
 		}
-		checkErr = op.Test()
+		errCheck = op.Test()
 	})
-	return checkErr
+	return errCheck
 }
 
 func (op Ops) Build() error {
@@ -64,7 +64,9 @@ func (Ops) Compile() error {
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
 		})
-		if err := golang.Builder.Exec(ctx, "go", "build", "-o", "/dev/null", "./..."); err != nil {
+		err := golang.Builder.Exec(ctx,
+			"go", "build", "-o", "/dev/null", "./...")
+		if err != nil {
 			return err
 		}
 	}
@@ -78,7 +80,9 @@ func (op Ops) Bump() error {
 	ctx := context.Background()
 	_, err := golang.Source.Read(ctx, "which", "bump")
 	if err != nil {
-		if err := golang.Builder.Exec(ctx, "go", "install", "lesiw.io/bump@latest"); err != nil {
+		err = golang.Builder.Exec(ctx,
+			"go", "install", "lesiw.io/bump@latest")
+		if err != nil {
 			return err
 		}
 	}
@@ -86,12 +90,14 @@ func (op Ops) Bump() error {
 	if err != nil {
 		return err
 	}
-	bumpsh := command.Shell(sub.Machine(golang.Source.Unshell(), path.Dir(which)), "bump")
+	m := sub.Machine(golang.Source.Unshell(), path.Dir(which))
+	bumpsh := command.Shell(m, "bump")
 
 	var versionBuf strings.Builder
 	_, err = command.Copy(
 		&versionBuf,
-		command.NewReader(ctx, golang.Source, "git", "describe", "--abbrev=0", "--tags"),
+		command.NewReader(ctx, golang.Source,
+			"git", "describe", "--abbrev=0", "--tags"),
 		command.NewStream(ctx, bumpsh, "bump", "-s", "1"),
 	)
 	if err != nil {
@@ -111,7 +117,8 @@ func (op Ops) Bump() error {
 func (Ops) ProxyPing() error {
 	ctx := context.Background()
 	var ref string
-	tag, err := golang.Source.Read(ctx, "git", "describe", "--exact-match", "--tags")
+	tag, err := golang.Source.Read(ctx,
+		"git", "describe", "--exact-match", "--tags")
 	if err == nil {
 		ref = tag
 	} else {

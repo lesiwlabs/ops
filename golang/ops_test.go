@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
 	"lesiw.io/command"
 	"lesiw.io/command/mock"
 )
@@ -39,7 +40,10 @@ func setupMock(t *testing.T, programs ...string) *mock.Machine {
 func TestTest(t *testing.T) {
 	m := setupMock(t, "go", "git")
 
-	Ops{}.Test()
+	err := Ops{}.Test()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := mock.Calls(m, "go")
 	want := []mock.Call{
@@ -62,13 +66,19 @@ func TestTest(t *testing.T) {
 func TestLint(t *testing.T) {
 	setupMock(t, "go", "git")
 
-	Ops{}.Lint()
+	err := Ops{}.Lint()
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCov(t *testing.T) {
 	m := setupMock(t, "go", "git")
 
-	Ops{}.Cov()
+	err := Ops{}.Cov()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	got := mock.Calls(m, "go")
 	want := []mock.Call{

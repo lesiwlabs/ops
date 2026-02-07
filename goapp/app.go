@@ -88,7 +88,9 @@ func (Ops) Bump() error {
 	ctx := context.Background()
 	_, err := golang.Source.Read(ctx, "which", "bump")
 	if err != nil {
-		if err := golang.Builder.Exec(ctx, "go", "install", "lesiw.io/bump@latest"); err != nil {
+		err = golang.Builder.Exec(ctx,
+			"go", "install", "lesiw.io/bump@latest")
+		if err != nil {
 			return err
 		}
 	}
@@ -100,7 +102,9 @@ func (Ops) Bump() error {
 	if err != nil {
 		return err
 	}
-	bumpsh := command.Shell(sub.Machine(golang.Source.Unshell(), path.Dir(which)), "bump")
+	m := sub.Machine(
+		golang.Source.Unshell(), path.Dir(which))
+	bumpsh := command.Shell(m, "bump")
 
 	var versionBuf strings.Builder
 	_, err = command.Copy(
@@ -113,13 +117,18 @@ func (Ops) Bump() error {
 	}
 	version := strings.TrimSpace(versionBuf.String())
 
-	if err := golang.Source.WriteFile(ctx, Versionfile, []byte(version+"\n")); err != nil {
+	err = golang.Source.WriteFile(ctx,
+		Versionfile, []byte(version+"\n"))
+	if err != nil {
 		return err
 	}
-	if err := golang.Source.Exec(ctx, "git", "add", Versionfile); err != nil {
+	err = golang.Source.Exec(ctx, "git", "add", Versionfile)
+	if err != nil {
 		return err
 	}
-	if err := golang.Source.Exec(ctx, "git", "commit", "-m", version); err != nil {
+	err = golang.Source.Exec(ctx,
+		"git", "commit", "-m", version)
+	if err != nil {
 		return err
 	}
 	if err := golang.Source.Exec(ctx, "git", "tag", version); err != nil {
