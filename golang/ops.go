@@ -709,6 +709,8 @@ func hasPackages(ctx context.Context, mod string) bool {
 func installMingo(ctx context.Context) error {
 	err := command.Do(ctx, Build.Unshell(), "mingo", "--help")
 	if command.NotFound(err) {
+		ctx := command.WithEnv(ctx,
+			map[string]string{"GOTOOLCHAIN": "local"})
 		err = Build.Exec(ctx,
 			"go", "install",
 			"github.com/bobg/mingo/cmd/mingo@latest")
