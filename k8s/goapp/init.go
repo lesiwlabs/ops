@@ -23,22 +23,20 @@ func init() {
 
 func runinit() (err error) {
 	ctx := context.Background()
-	sh := command.Shell(sys.Machine(), "go", "which", "base64")
+	m := sys.Machine()
+	sh := command.Shell(m, "go")
 
-	which, err := sh.Read(ctx, "which", "spkez")
-	if err != nil {
-		err := sh.Exec(ctx, "go", "install", "lesiw.io/spkez@latest")
+	if err := command.Do(ctx, m, "spkez", "--help"); command.NotFound(err) {
+		err := sh.Exec(ctx,
+			"go", "install", "lesiw.io/spkez@latest",
+		)
 		if err != nil {
 			return fmt.Errorf("could not install spkez: %w", err)
 		}
-		which, err = sh.Read(ctx, "which", "spkez")
-		if err != nil {
-			return fmt.Errorf("could not find spkez: %w", err)
-		}
 	}
-	spkez = command.Shell(sub.Machine(sys.Machine(), which), "spkez")
+	spkez = sub.Machine(m, "spkez")
 
-	config, err := spkez.Read(ctx, "spkez", "get", "k8s/config")
+	config, err := command.Read(ctx, spkez, "get", "k8s/config")
 	if err != nil {
 		return fmt.Errorf("could not get kubeconfig: %w", err)
 	}
@@ -59,17 +57,10 @@ func runinit() (err error) {
 		return fmt.Errorf("could not get full path of temp file: %w", err)
 	}
 
-	ctr = command.Shell(sub.Machine(sys.Machine(), "docker"), "docker")
-	k8s = command.Shell(
-		sub.Machine(
-			ctr.Unshell(),
-			"run", "-i", "--rm",
-			"-v", k8scfg+":/.kube/config",
-			"bitnami/kubectl",
-		),
-		"kubectl",
+	ctr = sub.Machine(m, "docker")
+	k8s = sub.Machine(ctr, "run", "-i", "--rm",
+		"-v", k8scfg+":/.kube/config",
+		"bitnami/kubectl",
 	)
-	rnr = sh
-
 	return nil
 }

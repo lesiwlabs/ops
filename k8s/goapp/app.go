@@ -3,6 +3,7 @@ package goapp
 import (
 	"cmp"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"math/rand/v2"
@@ -17,7 +18,7 @@ import (
 	"lesiw.io/command/sub"
 )
 
-var ctr, k8s, rnr, spkez *command.Sh
+var spkez, ctr, k8s command.Machine
 var k8scfg string
 
 type Ops struct {
@@ -70,29 +71,20 @@ func (op Ops) destroy(force bool) error {
 			return fmt.Errorf("could not backup the application: %w", err)
 		}
 	}
-	helm := command.Shell(
-		sub.Machine(
-			ctr.Unshell(),
-			"run", "-ti", "--rm",
-			"-v", k8scfg+":/root/.kube/config",
-			"-v", "helmcache:/root/.helm/cache",
-			"alpine/helm",
-		),
-		"helm",
+	helm := sub.Machine(ctr, "run", "-ti", "--rm",
+		"-v", k8scfg+":/root/.kube/config",
+		"-v", "helmcache:/root/.helm/cache",
+		"alpine/helm",
 	)
-	err := helm.Exec(ctx, "helm", "uninstall", goapp.Name)
+	err := command.Exec(ctx, helm, "uninstall", goapp.Name)
 	if err != nil {
 		return fmt.Errorf("could not delete helm release: %w", err)
 	}
 	if op.Postgres {
-		pg := command.Shell(
-			sub.Machine(
-				k8s.Unshell(),
-				"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
-			),
-			"psql",
+		pg := sub.Machine(k8s,
+			"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 		)
-		err := pg.Exec(ctx, "psql", fmt.Sprintf("drop role %s;", goapp.Name))
+		err := command.Exec(ctx, pg, fmt.Sprintf("drop role %s;", goapp.Name))
 		if err != nil {
 			return fmt.Errorf("could not drop postgres role: %w", err)
 		}
@@ -128,19 +120,18 @@ CMD [ "/app" ]
 		return "", fmt.Errorf("could not close Dockerfile: %w", err)
 	}
 	img := fmt.Sprintf("ctr.lesiw.dev/%s:%d", goapp.Name, time.Now().Unix())
-	if err := ctr.Exec(ctx, "docker", "build", "-t", img, "."); err != nil {
+	if err := command.Exec(ctx, ctr, "build", "-t", img, "."); err != nil {
 		return "", fmt.Errorf("could not build container: %w", err)
 	}
 	_, err = io.Copy(
-		command.NewWriter(ctx, ctr, "docker", "login",
+		command.NewWriter(ctx, ctr, "login",
 			"--password-stdin", "-u", "ll", "ctr.lesiw.dev"),
-		command.NewReader(ctx, spkez,
-			"spkez", "get", "ctr.lesiw.dev/auth"),
+		command.NewReader(ctx, spkez, "get", "ctr.lesiw.dev/auth"),
 	)
 	if err != nil {
 		return "", fmt.Errorf("could not docker login: %w", err)
 	}
-	if err := ctr.Exec(ctx, "docker", "push", img); err != nil {
+	if err := command.Exec(ctx, ctr, "push", img); err != nil {
 		return "", fmt.Errorf("could not push container: %w", err)
 	}
 	return img, nil
@@ -394,18 +385,13 @@ func (op Ops) deployImage(img string) error {
 		return fmt.Errorf("could not write to template file: %w", w.err)
 	}
 	ctx := context.Background()
-	helm := command.Shell(
-		sub.Machine(
-			ctr.Unshell(),
-			"run", "-ti", "--rm",
-			"-v", k8scfg+":/root/.kube/config",
-			"-v", "helmcache:/root/.helm/cache",
-			"-v", chart+":/chart",
-			"alpine/helm",
-		),
-		"helm",
+	helm := sub.Machine(ctr, "run", "-ti", "--rm",
+		"-v", k8scfg+":/root/.kube/config",
+		"-v", "helmcache:/root/.helm/cache",
+		"-v", chart+":/chart",
+		"alpine/helm",
 	)
-	err = helm.Exec(ctx, "helm", "upgrade", goapp.Name, "/chart", "--install")
+	err = command.Exec(ctx, helm, "upgrade", goapp.Name, "/chart", "--install")
 	if err != nil {
 		contents, readErr := os.ReadFile(filepath.Join(tmpl, "chart.yaml"))
 		if readErr != nil {
@@ -432,7 +418,7 @@ func (op Ops) k8sCtrSpec() (string, error) {
 			"            value: %s\n", k, v))
 	}
 	for k, v := range op.EnvSecrets {
-		r, err := spkez.Read(ctx, "spkez", "get", v)
+		r, err := command.Read(ctx, spkez, "get", v)
 		if err != nil {
 			return "", fmt.Errorf("could not read secret %q: %w", v, err)
 		}
@@ -457,7 +443,7 @@ func (op Ops) k8sCtrSpec() (string, error) {
 func (op Ops) writeSecret(k, v string) error {
 	ctx := context.Background()
 	_, err := io.Copy(
-		command.NewWriter(ctx, k8s, "kubectl", "apply", "-f", "-"),
+		command.NewWriter(ctx, k8s, "apply", "-f", "-"),
 		strings.NewReader(fmt.Sprintf(secretCfg, k, "data", v)),
 	)
 	if err != nil {
@@ -478,11 +464,11 @@ func createPostgresRole(name string) error {
 	ctx := context.Background()
 	secretName := name + "-db-secret"
 	var secretPass string
-	err := k8s.Do(ctx, "kubectl", "get", "secrets", secretName)
+	err := command.Do(ctx, k8s, "get", "secrets", secretName)
 	if err != nil {
 		secretPass = randStr(32)
 		_, err = io.Copy(
-			command.NewWriter(ctx, k8s, "kubectl", "apply", "-f", "-"),
+			command.NewWriter(ctx, k8s, "apply", "-f", "-"),
 			strings.NewReader(fmt.Sprintf(
 				secretCfg, secretName, "secret", secretPass)),
 		)
@@ -490,24 +476,21 @@ func createPostgresRole(name string) error {
 			return fmt.Errorf("could not generate secret: %w", err)
 		}
 	} else {
-		var passBuf strings.Builder
-		_, err = command.Copy(
-			&passBuf,
-			command.NewReader(ctx, k8s, "kubectl", "get", "secret", secretName,
-				"-o", "jsonpath={.data.secret}"),
-			command.NewStream(ctx, rnr, "base64", "--decode"),
+		encoded, err := command.Read(ctx, k8s,
+			"get", "secret", secretName,
+			"-o", "jsonpath={.data.secret}",
 		)
 		if err != nil {
 			return fmt.Errorf("could not get postgres password: %w", err)
 		}
-		secretPass = strings.TrimSpace(passBuf.String())
+		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		if err != nil {
+			return fmt.Errorf("could not decode postgres password: %w", err)
+		}
+		secretPass = string(decoded)
 	}
-	pg := command.Shell(
-		sub.Machine(
-			k8s.Unshell(),
-			"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
-		),
-		"psql",
+	pg := sub.Machine(k8s,
+		"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 	)
 	sql := `DO
 $do$
@@ -530,8 +513,7 @@ $do$;
 	// goapp.Name is trusted in any case and could already be used
 	// for k8s config injection and other terrible things,
 	// so this isn't an immediate concern.
-	err = pg.Exec(ctx,
-		"psql", fmt.Sprintf(sql, name, secretPass))
+	err = command.Exec(ctx, pg, fmt.Sprintf(sql, name, secretPass))
 	if err != nil {
 		return fmt.Errorf("could not create role: %w", err)
 	}
