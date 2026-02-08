@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	errname "github.com/Antonboom/errname/pkg/analyzer"
@@ -410,6 +411,9 @@ var InCleanTree = inCleanTree
 
 func inCleanTree(fn func(context.Context) error) error {
 	ctx := context.Background()
+	ctx = command.WithEnv(ctx, map[string]string{
+		"GOWORK": "off",
+	})
 	if Local.Env(ctx, "CI") != "" {
 		return inPlace(ctx, fn)
 	}
@@ -804,7 +808,30 @@ func mingoFix(ctx context.Context, mods []string) error {
 				"mingo in %s: %w", mod, err,
 			)
 		}
-		goVer := "1." + ver
+		minVer, err := strconv.Atoi(ver)
+		if err != nil {
+			return fmt.Errorf(
+				"mingo version %q: %w", ver, err,
+			)
+		}
+		// Read the current go directive. Only upgrade,
+		// never downgrade: tests may use newer features
+		// than the library source code.
+		cur, cerr := Build.Read(ctx,
+			"go", "-C", mod, "list", "-m", "-f",
+			"{{.GoVersion}}",
+		)
+		if cerr == nil {
+			parts := strings.SplitN(cur, ".", 2)
+			if len(parts) >= 2 {
+				if curMinor, err := strconv.Atoi(
+					parts[1],
+				); err == nil && curMinor > minVer {
+					minVer = curMinor
+				}
+			}
+		}
+		goVer := "1." + strconv.Itoa(minVer)
 		err = Build.Exec(ctx, "go", "-C", mod,
 			"mod", "edit", "-go="+goVer,
 		)
