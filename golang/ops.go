@@ -751,6 +751,10 @@ func installMingo(ctx context.Context) error {
 }
 
 func mingoCheck(ctx context.Context, mods []string) error {
+	// https://github.com/bobg/mingo/issues/17
+	if Build.OS(ctx) == "windows" {
+		return nil
+	}
 	if err := installMingo(ctx); err != nil {
 		return err
 	}
@@ -777,6 +781,10 @@ func mingoCheck(ctx context.Context, mods []string) error {
 }
 
 func mingoFix(ctx context.Context, mods []string) error {
+	// https://github.com/bobg/mingo/issues/17
+	if Build.OS(ctx) == "windows" {
+		return nil
+	}
 	if err := installMingo(ctx); err != nil {
 		return err
 	}
