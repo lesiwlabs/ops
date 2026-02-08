@@ -728,7 +728,7 @@ func mingoCheck(ctx context.Context, mods []string) error {
 	}
 	for _, mod := range mods {
 		err := Build.Exec(ctx,
-			"mingo", "-check", "-strict", "-tests", mod)
+			"mingo", "-check", "-strict", mod)
 		if err != nil {
 			return fmt.Errorf("mingo check in %s: %w",
 				mod, err)
@@ -742,7 +742,7 @@ func mingoFix(ctx context.Context, mods []string) error {
 		return err
 	}
 	for _, mod := range mods {
-		ver, err := Build.Read(ctx, "mingo", "-tests", mod)
+		ver, err := Build.Read(ctx, "mingo", mod)
 		if err != nil {
 			return fmt.Errorf("mingo in %s: %w", mod, err)
 		}
@@ -767,6 +767,8 @@ func gitIgnored(ctx context.Context, p string) bool {
 func installGoimports(ctx context.Context) error {
 	err := command.Do(ctx, Build.Unshell(), "goimports", "--help")
 	if command.NotFound(err) {
+		ctx := command.WithEnv(ctx,
+			map[string]string{"GOTOOLCHAIN": "local"})
 		err = Build.Exec(ctx,
 			"go", "install",
 			"golang.org/x/tools/cmd/goimports@latest")
