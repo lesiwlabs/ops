@@ -57,9 +57,9 @@ func (Ops) compile(ctx context.Context) error {
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
 		})
-		err := golang.Builder.Exec(ctx,
+		err := golang.Build.Exec(ctx,
 			"go", "build",
-			"-o", golang.DevNull(golang.Builder.OS(ctx)),
+			"-o", golang.DevNull(golang.Build.OS(ctx)),
 			"./...",
 		)
 		if err != nil {
@@ -74,25 +74,25 @@ func (op Ops) Bump() error {
 		return err
 	}
 	ctx := context.Background()
-	_, err := golang.Source.Read(ctx, "which", "bump")
+	_, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
-		err = golang.Builder.Exec(ctx,
+		err = golang.Build.Exec(ctx,
 			"go", "install", "lesiw.io/bump@latest")
 		if err != nil {
 			return err
 		}
 	}
-	which, err := golang.Source.Read(ctx, "which", "bump")
+	which, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
 		return err
 	}
-	m := sub.Machine(golang.Source.Unshell(), path.Dir(which))
+	m := sub.Machine(golang.Local.Unshell(), path.Dir(which))
 	bumpsh := command.Shell(m, "bump")
 
 	var versionBuf strings.Builder
 	_, err = command.Copy(
 		&versionBuf,
-		command.NewReader(ctx, golang.Source,
+		command.NewReader(ctx, golang.Local,
 			"git", "describe", "--abbrev=0", "--tags"),
 		command.NewStream(ctx, bumpsh, "bump", "-s", "1"),
 	)
@@ -101,32 +101,32 @@ func (op Ops) Bump() error {
 	}
 	version := strings.TrimSpace(versionBuf.String())
 
-	if err := golang.Source.Exec(ctx, "git", "tag", version); err != nil {
+	if err := golang.Local.Exec(ctx, "git", "tag", version); err != nil {
 		return err
 	}
-	if err := golang.Source.Exec(ctx, "git", "push"); err != nil {
+	if err := golang.Local.Exec(ctx, "git", "push"); err != nil {
 		return err
 	}
-	return golang.Source.Exec(ctx, "git", "push", "--tags")
+	return golang.Local.Exec(ctx, "git", "push", "--tags")
 }
 
 func (Ops) ProxyPing() error {
 	ctx := context.Background()
 	var ref string
-	tag, err := golang.Source.Read(ctx,
+	tag, err := golang.Local.Read(ctx,
 		"git", "describe", "--exact-match", "--tags")
 	if err == nil {
 		ref = tag
 	} else {
-		ref, err = golang.Source.Read(ctx, "git", "rev-parse", "HEAD")
+		ref, err = golang.Local.Read(ctx, "git", "rev-parse", "HEAD")
 		if err != nil {
 			return err
 		}
 	}
-	mod, err := golang.Builder.Read(ctx, "go", "list", "-m")
+	mod, err := golang.Build.Read(ctx, "go", "list", "-m")
 	if err != nil {
 		return err
 	}
-	return golang.Builder.Exec(ctx, "go", "list", "-m",
+	return golang.Build.Exec(ctx, "go", "list", "-m",
 		fmt.Sprintf("%s@%s", mod, ref))
 }

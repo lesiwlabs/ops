@@ -1,15 +1,18 @@
 package golang
 
 import (
+	"archive/tar"
 	"bufio"
 	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 
 	errname "github.com/Antonboom/errname/pkg/analyzer"
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis"
 	gochecker "golang.org/x/tools/go/analysis/checker"
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
@@ -55,8 +58,8 @@ import (
 type Ops struct{}
 
 var (
-	Source  = command.Shell(sys.Machine(), "git")
-	Builder = command.Shell(sys.Machine(), "go")
+	Local = command.Shell(sys.Machine(), "git")
+	Build = command.Shell(sys.Machine(), "go")
 )
 
 var GoModReplaceAllowed bool
@@ -64,6 +67,14 @@ var GoModReplaceAllowed bool
 func (o Ops) Vet() error { return o.vet(context.Background()) }
 
 func (o Ops) vet(ctx context.Context) error {
+	// Take initial snapshot if not already set (e.g. direct Vet() call).
+	if snapshotFromContext(ctx) == nil {
+		snap, err := takeSnapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("initial snapshot: %w", err)
+		}
+		ctx = withSnapshot(ctx, snap)
+	}
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -71,7 +82,7 @@ func (o Ops) vet(ctx context.Context) error {
 
 	// go mod tidy (all modules)
 	for _, mod := range mods {
-		err = Builder.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		err = Build.Exec(ctx, "go", "-C", mod, "mod", "tidy")
 		if err != nil {
 			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
 		}
@@ -84,7 +95,7 @@ func (o Ops) vet(ctx context.Context) error {
 	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	err = Builder.Exec(ctx, "goimports",
+	err = Build.Exec(ctx, "goimports",
 		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
 	if err != nil {
 		return fmt.Errorf("goimports: %w", err)
@@ -95,7 +106,7 @@ func (o Ops) vet(ctx context.Context) error {
 
 	// go fix (all modules)
 	for _, mod := range mods {
-		err = Builder.Exec(ctx, "go", "-C", mod, "fix", "./...")
+		err = Build.Exec(ctx, "go", "-C", mod, "fix", "./...")
 		if err != nil {
 			return fmt.Errorf("go fix in %s: %w", mod, err)
 		}
@@ -106,7 +117,7 @@ func (o Ops) vet(ctx context.Context) error {
 
 	// go vet (all modules)
 	for _, mod := range mods {
-		err = Builder.Exec(ctx, "go", "-C", mod, "vet", "./...")
+		err = Build.Exec(ctx, "go", "-C", mod, "vet", "./...")
 		if err != nil {
 			return fmt.Errorf("go vet in %s: %w", mod, err)
 		}
@@ -114,7 +125,7 @@ func (o Ops) vet(ctx context.Context) error {
 
 	// go.mod replace check (already recursive)
 	if !GoModReplaceAllowed {
-		if err := checkGoModReplace(ctx, Builder); err != nil {
+		if err := checkGoModReplace(ctx, Build); err != nil {
 			return err
 		}
 	}
@@ -151,7 +162,7 @@ func (o Ops) fix(ctx context.Context) error {
 
 	// go mod tidy (all modules)
 	for _, mod := range mods {
-		err = Builder.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		err = Build.Exec(ctx, "go", "-C", mod, "mod", "tidy")
 		if err != nil {
 			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
 		}
@@ -161,7 +172,7 @@ func (o Ops) fix(ctx context.Context) error {
 	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	err = Builder.Exec(ctx, "goimports",
+	err = Build.Exec(ctx, "goimports",
 		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
 	if err != nil {
 		return fmt.Errorf("goimports: %w", err)
@@ -169,7 +180,7 @@ func (o Ops) fix(ctx context.Context) error {
 
 	// go fix (all modules)
 	for _, mod := range mods {
-		err = Builder.Exec(ctx, "go", "-C", mod, "fix", "./...")
+		err = Build.Exec(ctx, "go", "-C", mod, "fix", "./...")
 		if err != nil {
 			return fmt.Errorf("go fix in %s: %w", mod, err)
 		}
@@ -182,33 +193,33 @@ func (o Ops) fix(ctx context.Context) error {
 func (Ops) Lint() error {
 	ctx := context.Background()
 	if !GoModReplaceAllowed {
-		return checkGoModReplace(ctx, Builder)
+		return checkGoModReplace(ctx, Build)
 	}
 	return nil
 }
 
 func (Ops) Cov() error {
 	ctx := context.Background()
-	tmpDir, err := Builder.Temp(ctx, "gocover/")
+	tmpDir, err := Build.Temp(ctx, "gocover/")
 	if err != nil {
 		return err
 	}
 	defer tmpDir.Close()
-	defer Builder.RemoveAll(ctx, tmpDir.Path())
+	defer Build.RemoveAll(ctx, tmpDir.Path())
 
 	coverOutPath := path.Join(tmpDir.Path(), "cover.out")
-	coverOut, err := Builder.Create(ctx, coverOutPath)
+	coverOut, err := Build.Create(ctx, coverOutPath)
 	if err != nil {
 		return err
 	}
 	defer coverOut.Close()
 
-	err = Builder.Exec(ctx, "go", "test",
+	err = Build.Exec(ctx, "go", "test",
 		"-coverprofile", coverOut.Path(), "./...")
 	if err != nil {
 		return err
 	}
-	return Builder.Exec(ctx, "go", "tool", "cover",
+	return Build.Exec(ctx, "go", "tool", "cover",
 		"-html="+coverOut.Path())
 }
 
@@ -237,17 +248,22 @@ var InCleanTree = inCleanTree
 
 func inCleanTree(fn func(context.Context) error) error {
 	ctx := context.Background()
-	tmp, err := Source.Temp(ctx, "op-check/")
+	tmp, err := Local.Temp(ctx, "op-check/")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
-	defer Source.RemoveAll(ctx, tmp.Path())
+	defer Local.RemoveAll(ctx, tmp.Path())
 
-	// Extract committed tree into temp dir.
+	// Extract committed tree into temp dir, capturing snapshot.
 	archive := command.NewReader(ctx,
-		Source, "git", "archive", "HEAD")
-	if _, err = io.Copy(tmp, archive); err != nil {
-		return fmt.Errorf("git archive: %w", err)
+		Local, "git", "archive", "HEAD")
+	tee := io.TeeReader(archive, tmp)
+	before, err := parseTarSnapshot(tee)
+	if err != nil {
+		return fmt.Errorf("parse archive: %w", err)
+	}
+	if _, err = io.Copy(io.Discard, tee); err != nil {
+		return fmt.Errorf("drain archive: %w", err)
 	}
 	if err = archive.Close(); err != nil {
 		return fmt.Errorf("archive close: %w", err)
@@ -257,30 +273,13 @@ func inCleanTree(fn func(context.Context) error) error {
 	}
 
 	ctx = fs.WithWorkDir(ctx, tmp.Path())
-
-	// Init git repo for diffCheck.
-	err = Source.Exec(ctx, "git", "init")
-	if err != nil {
-		return fmt.Errorf("git init: %w", err)
-	}
-	err = Source.Exec(ctx, "git", "add", "-A")
-	if err != nil {
-		return fmt.Errorf("git add: %w", err)
-	}
-	err = Source.Exec(ctx,
-		"git", "commit", "--allow-empty",
-		"-m", "init",
-		"--author", "op <op@localhost>")
-	if err != nil {
-		return fmt.Errorf("git commit: %w", err)
-	}
-
+	ctx = withSnapshot(ctx, before)
 	return fn(ctx)
 }
 
 func modules(ctx context.Context) ([]string, error) {
 	var mods []string
-	if err := findModules(ctx, Builder, ".", &mods); err != nil {
+	if err := findModules(ctx, Build, ".", &mods); err != nil {
 		return nil, err
 	}
 	return mods, nil
@@ -330,7 +329,7 @@ func runTests(ctx context.Context, mods []string, short bool) error {
 		args = append(args, "./...")
 		ctx0 := command.WithEnv(ctx,
 			map[string]string{"CGO_ENABLED": "0"})
-		if err := Builder.Exec(ctx0, args...); err != nil {
+		if err := Build.Exec(ctx0, args...); err != nil {
 			return fmt.Errorf("test (no race) in %s: %w", mod, err)
 		}
 
@@ -342,7 +341,7 @@ func runTests(ctx context.Context, mods []string, short bool) error {
 		args = append(args, "./...")
 		ctx1 := command.WithEnv(ctx,
 			map[string]string{"CGO_ENABLED": "1"})
-		if err := Builder.Exec(ctx1, args...); err != nil {
+		if err := Build.Exec(ctx1, args...); err != nil {
 			return fmt.Errorf("test (race) in %s: %w", mod, err)
 		}
 	}
@@ -350,12 +349,111 @@ func runTests(ctx context.Context, mods []string, short bool) error {
 }
 
 func diffCheck(ctx context.Context, step string) error {
-	diff, err := Source.Read(ctx, "git", "diff", "--name-only")
-	if err != nil {
-		return fmt.Errorf("git diff after %s: %w", step, err)
+	before := snapshotFromContext(ctx)
+	if before == nil {
+		return nil
 	}
-	if diff != "" {
-		return fmt.Errorf("%s produced changes:\n%s", step, diff)
+	after, err := takeSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("snapshot after %s: %w", step, err)
+	}
+
+	var buf strings.Builder
+	for _, name := range slices.Sorted(maps.Keys(before)) {
+		afterContent, ok := after[name]
+		if !ok {
+			fmt.Fprintf(&buf, "deleted: %s\n", name)
+			continue
+		}
+		if before[name] != afterContent {
+			diff := cmp.Diff(
+				strings.Split(before[name], "\n"),
+				strings.Split(afterContent, "\n"),
+			)
+			fmt.Fprintf(&buf, "--- %s\n%s", name, diff)
+		}
+	}
+	for _, name := range slices.Sorted(maps.Keys(after)) {
+		if _, ok := before[name]; !ok {
+			fmt.Fprintf(&buf, "added: %s\n", name)
+		}
+	}
+
+	if buf.Len() > 0 {
+		return fmt.Errorf("%s produced changes:\n%s",
+			step, buf.String())
+	}
+	return nil
+}
+
+type snapshotKey struct{}
+
+func withSnapshot(
+	ctx context.Context, snap map[string]string,
+) context.Context {
+	return context.WithValue(ctx, snapshotKey{}, snap)
+}
+
+func snapshotFromContext(ctx context.Context) map[string]string {
+	snap, _ := ctx.Value(snapshotKey{}).(map[string]string)
+	return snap
+}
+
+func parseTarSnapshot(r io.Reader) (map[string]string, error) {
+	snap := make(map[string]string)
+	tr := tar.NewReader(r)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return snap, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		if hdr.Typeflag != tar.TypeReg {
+			continue
+		}
+		data, err := io.ReadAll(tr)
+		if err != nil {
+			return nil, err
+		}
+		snap[path.Join(".", hdr.Name)] = string(data)
+	}
+}
+
+func takeSnapshot(
+	ctx context.Context,
+) (map[string]string, error) {
+	snap := make(map[string]string)
+	if err := walkSnapshot(ctx, ".", snap); err != nil {
+		return nil, err
+	}
+	return snap, nil
+}
+
+func walkSnapshot(
+	ctx context.Context, dir string, snap map[string]string,
+) error {
+	for entry, err := range Build.ReadDir(ctx, dir) {
+		if err != nil {
+			return err
+		}
+		name := entry.Name()
+		if name == ".git" || name == "vendor" {
+			continue
+		}
+		p := path.Join(dir, name)
+		if entry.IsDir() {
+			if err := walkSnapshot(ctx, p, snap); err != nil {
+				return err
+			}
+			continue
+		}
+		data, err := Build.ReadFile(ctx, p)
+		if err != nil {
+			return err
+		}
+		snap[p] = string(data)
 	}
 	return nil
 }
@@ -369,16 +467,16 @@ func DevNull(os string) string {
 }
 
 func installGoimports(ctx context.Context) error {
-	err := command.Do(ctx, Builder.Unshell(), "goimports", "--help")
+	err := command.Do(ctx, Build.Unshell(), "goimports", "--help")
 	if command.NotFound(err) {
-		err = Builder.Exec(ctx,
+		err = Build.Exec(ctx,
 			"go", "install",
 			"golang.org/x/tools/cmd/goimports@latest")
 		if err != nil {
 			return err
 		}
 	}
-	Builder.Handle("goimports", Builder.Unshell())
+	Build.Handle("goimports", Build.Unshell())
 	return nil
 }
 
@@ -488,7 +586,7 @@ func applyFixes(
 	}
 
 	for filename, edits := range fileEdits {
-		content, err := Builder.ReadFile(ctx, filename)
+		content, err := Build.ReadFile(ctx, filename)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", filename, err)
 		}
@@ -499,7 +597,7 @@ func applyFixes(
 			content = slices.Replace(
 				content, e.start, e.end, e.newText...)
 		}
-		err = Builder.WriteFile(ctx, filename, content)
+		err = Build.WriteFile(ctx, filename, content)
 		if err != nil {
 			return fmt.Errorf("write %s: %w", filename, err)
 		}

@@ -46,9 +46,9 @@ func (Ops) compile(ctx context.Context) error {
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
 		})
-		err := golang.Builder.Exec(ctx,
+		err := golang.Build.Exec(ctx,
 			"go", "build",
-			"-o", golang.DevNull(golang.Builder.OS(ctx)),
+			"-o", golang.DevNull(golang.Build.OS(ctx)),
 			".",
 		)
 		if err != nil {
@@ -78,19 +78,19 @@ func (op Ops) Build() error {
 			"GOOS":        t.Goos,
 			"GOARCH":      t.Goarch,
 		})
-		if err := golang.Builder.Exec(ctx,
+		if err := golang.Build.Exec(ctx,
 			"go", "build", "-ldflags=-s -w", "-o",
 			"out/"+Name+"-"+t.Unames+"-"+t.Unamer, ".",
 		); err != nil {
 			return err
 		}
 	}
-	builderOut, err := golang.Builder.Open(ctx, "out/")
+	builderOut, err := golang.Build.Open(ctx, "out/")
 	if err != nil {
 		return err
 	}
 	defer builderOut.Close()
-	sourceOut, err := golang.Source.Create(ctx, "out/")
+	sourceOut, err := golang.Local.Create(ctx, "out/")
 	if err != nil {
 		return err
 	}
@@ -103,32 +103,32 @@ func (op Ops) Build() error {
 
 func (Ops) Clean() error {
 	ctx := context.Background()
-	if err := golang.Source.RemoveAll(ctx, "out"); err != nil {
+	if err := golang.Local.RemoveAll(ctx, "out"); err != nil {
 		return err
 	}
-	return golang.Source.MkdirAll(ctx, "out")
+	return golang.Local.MkdirAll(ctx, "out")
 }
 
 func (Ops) Bump() error {
 	ctx := context.Background()
-	_, err := golang.Source.Read(ctx, "which", "bump")
+	_, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
-		err = golang.Builder.Exec(ctx,
+		err = golang.Build.Exec(ctx,
 			"go", "install", "lesiw.io/bump@latest")
 		if err != nil {
 			return err
 		}
 	}
-	curVersion, err := golang.Builder.ReadFile(ctx, Versionfile)
+	curVersion, err := golang.Build.ReadFile(ctx, Versionfile)
 	if err != nil {
 		return err
 	}
-	which, err := golang.Source.Read(ctx, "which", "bump")
+	which, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
 		return err
 	}
 	m := sub.Machine(
-		golang.Source.Unshell(), path.Dir(which))
+		golang.Local.Unshell(), path.Dir(which))
 	bumpsh := command.Shell(m, "bump")
 
 	var versionBuf strings.Builder
@@ -142,25 +142,25 @@ func (Ops) Bump() error {
 	}
 	version := strings.TrimSpace(versionBuf.String())
 
-	err = golang.Source.WriteFile(ctx,
+	err = golang.Local.WriteFile(ctx,
 		Versionfile, []byte(version+"\n"))
 	if err != nil {
 		return err
 	}
-	err = golang.Source.Exec(ctx, "git", "add", Versionfile)
+	err = golang.Local.Exec(ctx, "git", "add", Versionfile)
 	if err != nil {
 		return err
 	}
-	err = golang.Source.Exec(ctx,
+	err = golang.Local.Exec(ctx,
 		"git", "commit", "-m", version)
 	if err != nil {
 		return err
 	}
-	if err := golang.Source.Exec(ctx, "git", "tag", version); err != nil {
+	if err := golang.Local.Exec(ctx, "git", "tag", version); err != nil {
 		return err
 	}
-	if err := golang.Source.Exec(ctx, "git", "push"); err != nil {
+	if err := golang.Local.Exec(ctx, "git", "push"); err != nil {
 		return err
 	}
-	return golang.Source.Exec(ctx, "git", "push", "--tags")
+	return golang.Local.Exec(ctx, "git", "push", "--tags")
 }

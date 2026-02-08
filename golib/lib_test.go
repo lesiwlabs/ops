@@ -32,8 +32,8 @@ func TestCheckRunsOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	swap(t, &golang.Builder, sh)
-	swap(t, &golang.Source, sh)
+	swap(t, &golang.Build, sh)
+	swap(t, &golang.Local, sh)
 	swap(t, &golang.InCleanTree,
 		func(fn func(context.Context) error) error {
 			return fn(context.Background())

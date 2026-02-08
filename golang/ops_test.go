@@ -32,8 +32,8 @@ func setupMock(t *testing.T, programs ...string) *mock.Machine {
 		[]byte("module test\n")); err != nil {
 		t.Fatal(err)
 	}
-	swap(t, &Builder, sh)
-	swap(t, &Source, sh)
+	swap(t, &Build, sh)
+	swap(t, &Local, sh)
 	return m
 }
 
