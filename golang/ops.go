@@ -438,7 +438,8 @@ func findModules(
 			return fmt.Errorf("read directory %s: %w", dir, err)
 		}
 		name := entry.Name()
-		if name == ".git" || name == "vendor" {
+		if name == ".git" || name == "vendor" ||
+			name == "testdata" {
 			continue
 		}
 		entryPath := path.Join(dir, name)
@@ -555,6 +556,9 @@ func parseTarSnapshot(r io.Reader) (map[string]string, error) {
 		if hdr.Typeflag != tar.TypeReg {
 			continue
 		}
+		if isTestdataPath(hdr.Name) {
+			continue
+		}
 		data, err := io.ReadAll(tr)
 		if err != nil {
 			return nil, err
@@ -583,7 +587,8 @@ func walkSnapshot(
 			return err
 		}
 		name := entry.Name()
-		if name == ".git" || name == "vendor" {
+		if name == ".git" || name == "vendor" ||
+			name == "testdata" {
 			continue
 		}
 		p := path.Join(dir, name)
@@ -603,8 +608,11 @@ func walkSnapshot(
 }
 
 func isTestdataPath(p string) bool {
+	p = strings.ReplaceAll(p, "\\", "/")
 	return strings.Contains(p, "/testdata/") ||
-		strings.Contains(p, "\\testdata\\")
+		strings.HasSuffix(p, "/testdata") ||
+		strings.HasPrefix(p, "testdata/") ||
+		p == "testdata"
 }
 
 // DevNull returns the platform-appropriate null device path.
