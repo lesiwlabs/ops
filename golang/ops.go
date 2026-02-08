@@ -951,6 +951,11 @@ func runFixAnalyzers(ctx context.Context, mods []string) error {
 	return nil
 }
 
+type fixEdit struct {
+	start, end int
+	newText    string
+}
+
 func applyFixes(
 	ctx context.Context,
 	pkgs []*packages.Package,
@@ -961,11 +966,8 @@ func applyFixes(
 	}
 	fset := pkgs[0].Fset
 
-	type edit struct {
-		start, end int
-		newText    []byte
-	}
-	fileEdits := make(map[string][]edit)
+	// Accumulated merged edits per file.
+	acc := make(map[string][]fixEdit)
 
 	for act := range graph.All() {
 		for _, d := range act.Diagnostics {
@@ -975,38 +977,123 @@ func applyFixes(
 				continue
 			}
 			for _, fix := range d.SuggestedFixes {
+				// Group this fix's edits by file.
+				byFile := make(map[string][]fixEdit)
 				for _, te := range fix.TextEdits {
 					pos := fset.Position(te.Pos)
 					end := fset.Position(te.End)
-					fileEdits[pos.Filename] = append(
-						fileEdits[pos.Filename], edit{
+					byFile[pos.Filename] = append(
+						byFile[pos.Filename], fixEdit{
 							start:   pos.Offset,
 							end:     end.Offset,
-							newText: te.NewText,
+							newText: string(te.NewText),
 						})
 				}
+				// Merge this fix's edits into the
+				// accumulated set. When a file is
+				// analyzed as both "p" and "p [p.test]",
+				// identical fixes are produced twice;
+				// mergeEdits coalesces them.
+				conflict := false
+				merged := make(map[string][]fixEdit)
+				for file, edits := range byFile {
+					sortEdits(edits)
+					m, ok := mergeEdits(
+						acc[file], edits,
+					)
+					if !ok {
+						conflict = true
+						break
+					}
+					merged[file] = m
+				}
+				if conflict {
+					continue
+				}
+				maps.Copy(acc, merged)
 			}
 		}
 	}
 
-	for filename, edits := range fileEdits {
+	for filename, edits := range acc {
 		content, err := Build.ReadFile(ctx, filename)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", filename, err)
 		}
-		slices.SortFunc(edits, func(a, b edit) int {
-			return b.start - a.start
-		})
+		// Apply edits front-to-back, copying unchanged
+		// regions between edits.
+		var out []byte
+		last := 0
 		for _, e := range edits {
-			content = slices.Replace(
-				content, e.start, e.end, e.newText...)
+			if e.start < last {
+				return fmt.Errorf(
+					"overlapping edit in %s at %d",
+					filename, e.start)
+			}
+			out = append(out, content[last:e.start]...)
+			out = append(out, e.newText...)
+			last = e.end
 		}
-		err = Build.WriteFile(ctx, filename, content)
+		out = append(out, content[last:]...)
+		err = Build.WriteFile(ctx, filename, out)
 		if err != nil {
 			return fmt.Errorf("write %s: %w", filename, err)
 		}
 	}
 	return nil
+}
+
+func sortEdits(edits []fixEdit) {
+	slices.SortFunc(edits, func(a, b fixEdit) int {
+		if a.start != b.start {
+			return a.start - b.start
+		}
+		return a.end - b.end
+	})
+}
+
+// mergeEdits merges two sorted lists of edits, coalescing
+// identical edits and detecting conflicts. Based on
+// golang.org/x/tools/internal/diff.Merge.
+func mergeEdits(x, y []fixEdit) ([]fixEdit, bool) {
+	x = slices.Clone(x)
+	y = slices.Clone(y)
+	var merged []fixEdit
+	var xi, yi int
+	for xi < len(x) && yi < len(y) {
+		px := &x[xi]
+		py := &y[yi]
+		if *px == *py {
+			merged = append(merged, *px)
+			xi++
+			yi++
+		} else if px.end <= py.start {
+			merged = append(merged, *px)
+			xi++
+		} else if py.end <= px.start {
+			merged = append(merged, *py)
+			yi++
+		} else if px.start < py.start {
+			merged = append(merged, fixEdit{
+				px.start, py.start, "",
+			})
+			px.start = py.start
+		} else if py.start < px.start {
+			merged = append(merged, fixEdit{
+				py.start, px.start, "",
+			})
+			py.start = px.start
+		} else {
+			return nil, false
+		}
+	}
+	for ; xi < len(x); xi++ {
+		merged = append(merged, x[xi])
+	}
+	for ; yi < len(y); yi++ {
+		merged = append(merged, y[yi])
+	}
+	return merged, true
 }
 
 // Analyzers returns the standard set of analyzers.
