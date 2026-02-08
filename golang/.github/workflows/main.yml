@@ -1,34 +1,38 @@
-name: main
+name: check
 on:
   push:
     branches: [main, next]
   pull_request:
 jobs:
-  gate:
+  ubuntu:
+    strategy:
+      matrix:
+        go: [stable, oldstable]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: stable
+          go-version: ${{ matrix.go }}
       - run: go run lesiw.io/op@latest
-  test:
-    needs: gate
+  macos:
+    needs: ubuntu
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - runner: macos-latest
-            go: stable
-          - runner: macos-latest
-            go: oldstable
-          - runner: windows-latest
-            go: stable
-          - runner: windows-latest
-            go: oldstable
-          - runner: ubuntu-latest
-            go: oldstable
-    runs-on: ${{ matrix.runner }}
+        go: [stable, oldstable]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go run lesiw.io/op@latest
+  windows:
+    needs: ubuntu
+    strategy:
+      matrix:
+        go: [stable, oldstable]
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -36,7 +40,7 @@ jobs:
           go-version: ${{ matrix.go }}
       - run: go run lesiw.io/op@latest
   alpine:
-    needs: gate
+    needs: ubuntu
     strategy:
       matrix:
         go: [stable, oldstable]
@@ -59,7 +63,7 @@ jobs:
             go run lesiw.io/op@latest
           '
   freebsd:
-    needs: gate
+    needs: ubuntu
     strategy:
       matrix:
         go: [stable, oldstable]
