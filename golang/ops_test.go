@@ -2,6 +2,7 @@ package golang
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -89,6 +90,115 @@ func TestCov(t *testing.T) {
 	}
 	if !cmp.Equal(want, got) {
 		t.Errorf("go calls: -want +got\n%s", cmp.Diff(want, got))
+	}
+}
+
+var buffer = strings.NewReader
+
+func TestPromoteSuccess(t *testing.T) {
+	m := setupMock(t, "git", "gh")
+	m.Return(buffer("next\n"), "git", "branch", "--show-current")
+	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
+	m.Return(buffer("def456\n"), "git", "rev-parse", "next")
+	m.Return(buffer("success\n"), "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "conclusion", "--jq", ".[0].conclusion")
+
+	err := Ops{}.Promote()
+	if err != nil {
+		t.Fatalf("Promote() failed: %v", err)
+	}
+
+	gotGit := mock.Calls(m, "git")
+	wantGit := []mock.Call{
+		{Args: []string{"git", "branch", "--show-current"}},
+		{Args: []string{"git", "fetch", "github"}},
+		{Args: []string{
+			"git", "merge-base", "--is-ancestor",
+			"github/main", "next",
+		}},
+		{Args: []string{"git", "rev-parse", "github/main"}},
+		{Args: []string{"git", "rev-parse", "next"}},
+		{Args: []string{"git", "push", "github", "next:main"}},
+		{Args: []string{"git", "fetch", "github", "main:main"}},
+	}
+	if !cmp.Equal(wantGit, gotGit) {
+		t.Errorf("git calls: -want +got\n%s",
+			cmp.Diff(wantGit, gotGit))
+	}
+
+	gotGh := mock.Calls(m, "gh")
+	wantGh := []mock.Call{
+		{Args: []string{
+			"gh", "run", "list",
+			"--branch", "next", "--limit", "1",
+			"--json", "conclusion", "--jq", ".[0].conclusion",
+		}},
+	}
+	if !cmp.Equal(wantGh, gotGh) {
+		t.Errorf("gh calls: -want +got\n%s",
+			cmp.Diff(wantGh, gotGh))
+	}
+}
+
+func TestPromoteCIFailed(t *testing.T) {
+	m := setupMock(t, "git", "gh")
+	m.Return(buffer("next\n"), "git", "branch", "--show-current")
+	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
+	m.Return(buffer("def456\n"), "git", "rev-parse", "next")
+	m.Return(buffer("PENDING\n"), "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "conclusion", "--jq", ".[0].conclusion")
+
+	err := Ops{}.Promote()
+	if err == nil {
+		t.Fatal("Promote() should fail when CI has not passed")
+	}
+	if !strings.Contains(err.Error(), "CI has not passed") {
+		t.Errorf("error = %v, want 'CI has not passed'", err)
+	}
+}
+
+func TestPromoteWrongBranch(t *testing.T) {
+	m := setupMock(t, "git")
+	m.Return(buffer("main\n"), "git", "branch", "--show-current")
+
+	err := Ops{}.Promote()
+	if err == nil {
+		t.Fatal("Promote() should fail when not on next branch")
+	}
+	if !strings.Contains(err.Error(), "must be on next branch") {
+		t.Errorf("error = %v, want 'must be on next branch'", err)
+	}
+}
+
+func TestPromoteMainDiverged(t *testing.T) {
+	m := setupMock(t, "git")
+	m.Return(buffer("next\n"), "git", "branch", "--show-current")
+	m.Return(command.Fail(&command.Error{Code: 1}),
+		"git", "merge-base", "--is-ancestor", "github/main", "next")
+
+	err := Ops{}.Promote()
+	if err == nil {
+		t.Fatal("Promote() should fail when main has diverged")
+	}
+	if !strings.Contains(err.Error(), "cannot fast-forward") {
+		t.Errorf("error = %v, want 'cannot fast-forward'", err)
+	}
+}
+
+func TestPromoteAlreadyEqual(t *testing.T) {
+	m := setupMock(t, "git")
+	m.Return(buffer("next\n"), "git", "branch", "--show-current")
+	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
+	m.Return(buffer("abc123\n"), "git", "rev-parse", "next")
+
+	err := Ops{}.Promote()
+	if err == nil {
+		t.Fatal("Promote() should fail when next and main are equal")
+	}
+	if !strings.Contains(err.Error(), "same commit") {
+		t.Errorf("error = %v, want 'same commit'", err)
 	}
 }
 

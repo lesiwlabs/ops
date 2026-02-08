@@ -58,7 +58,7 @@ import (
 type Ops struct{}
 
 var (
-	Local = command.Shell(sys.Machine(), "git")
+	Local = command.Shell(sys.Machine(), "git", "gh")
 	Build = command.Shell(sys.Machine(), "go")
 )
 
@@ -221,6 +221,70 @@ func (Ops) Cov() error {
 	}
 	return Build.Exec(ctx, "go", "tool", "cover",
 		"-html="+coverOut.Path())
+}
+
+// Promote fast-forwards main to next after CI passes.
+// Requires being on the next branch with all changes pushed.
+func (Ops) Promote() error {
+	ctx := context.Background()
+
+	branch, err := Local.Read(ctx, "git", "branch", "--show-current")
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	if branch != "next" {
+		return fmt.Errorf(
+			"must be on next branch (currently on %s)", branch)
+	}
+
+	if err := Local.Exec(ctx, "git", "fetch", "github"); err != nil {
+		return fmt.Errorf("failed to fetch from github: %w", err)
+	}
+
+	out, err := Local.Read(ctx, "git", "merge-base", "--is-ancestor",
+		"github/main", "next")
+	if err != nil {
+		return fmt.Errorf(
+			"cannot fast-forward: main has diverged from next\n%s", out,
+		)
+	}
+
+	mainHash, err := Local.Read(ctx, "git", "rev-parse", "github/main")
+	if err != nil {
+		return fmt.Errorf("failed to get main hash: %w", err)
+	}
+	nextHash, err := Local.Read(ctx, "git", "rev-parse", "next")
+	if err != nil {
+		return fmt.Errorf("failed to get next hash: %w", err)
+	}
+	if mainHash == nextHash {
+		return fmt.Errorf("next and main are at the same commit")
+	}
+
+	fmt.Println("Checking CI status...")
+	ciStatus, err := Local.Read(ctx, "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "conclusion", "--jq", ".[0].conclusion")
+	if err != nil {
+		return fmt.Errorf("failed to check CI status: %w", err)
+	}
+	if ciStatus != "success" {
+		return fmt.Errorf("CI has not passed (status: %s)", ciStatus)
+	}
+
+	fmt.Println("Promoting next to main...")
+	err = Local.Exec(ctx, "git", "push", "github", "next:main")
+	if err != nil {
+		return fmt.Errorf("failed to push next:main: %w", err)
+	}
+
+	err = Local.Exec(ctx, "git", "fetch", "github", "main:main")
+	if err != nil {
+		return fmt.Errorf("failed to update local main: %w", err)
+	}
+
+	fmt.Println("Successfully promoted next to main")
+	return nil
 }
 
 // Check runs vet, compile, and test in a clean tree.
