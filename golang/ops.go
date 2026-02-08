@@ -9,23 +9,53 @@ import (
 	"io"
 	"maps"
 	"slices"
-	"strconv"
 	"strings"
 
 	errname "github.com/Antonboom/errname/pkg/analyzer"
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/tools/go/analysis"
 	gochecker "golang.org/x/tools/go/analysis/checker"
+	"golang.org/x/tools/go/analysis/passes/appends"
+	"golang.org/x/tools/go/analysis/passes/asmdecl"
+	"golang.org/x/tools/go/analysis/passes/assign"
+	"golang.org/x/tools/go/analysis/passes/atomic"
 	"golang.org/x/tools/go/analysis/passes/atomicalign"
+	"golang.org/x/tools/go/analysis/passes/bools"
+	"golang.org/x/tools/go/analysis/passes/buildtag"
+	"golang.org/x/tools/go/analysis/passes/cgocall"
 	"golang.org/x/tools/go/analysis/passes/composite"
 	"golang.org/x/tools/go/analysis/passes/copylock"
 	"golang.org/x/tools/go/analysis/passes/deepequalerrors"
+	"golang.org/x/tools/go/analysis/passes/defers"
+	"golang.org/x/tools/go/analysis/passes/directive"
+	"golang.org/x/tools/go/analysis/passes/errorsas"
+	"golang.org/x/tools/go/analysis/passes/framepointer"
 	"golang.org/x/tools/go/analysis/passes/gofix"
 	"golang.org/x/tools/go/analysis/passes/hostport"
 	"golang.org/x/tools/go/analysis/passes/httpmux"
+	"golang.org/x/tools/go/analysis/passes/httpresponse"
+	"golang.org/x/tools/go/analysis/passes/ifaceassert"
+	"golang.org/x/tools/go/analysis/passes/loopclosure"
+	"golang.org/x/tools/go/analysis/passes/lostcancel"
+	"golang.org/x/tools/go/analysis/passes/nilfunc"
 	"golang.org/x/tools/go/analysis/passes/nilness"
+	"golang.org/x/tools/go/analysis/passes/printf"
 	"golang.org/x/tools/go/analysis/passes/reflectvaluecompare"
+	"golang.org/x/tools/go/analysis/passes/shift"
+	"golang.org/x/tools/go/analysis/passes/sigchanyzer"
+	"golang.org/x/tools/go/analysis/passes/slog"
 	"golang.org/x/tools/go/analysis/passes/sortslice"
+	"golang.org/x/tools/go/analysis/passes/stdmethods"
+	"golang.org/x/tools/go/analysis/passes/stdversion"
+	"golang.org/x/tools/go/analysis/passes/stringintconv"
+	"golang.org/x/tools/go/analysis/passes/structtag"
+	"golang.org/x/tools/go/analysis/passes/testinggoroutine"
+	"golang.org/x/tools/go/analysis/passes/tests"
+	"golang.org/x/tools/go/analysis/passes/timeformat"
+	"golang.org/x/tools/go/analysis/passes/unmarshal"
+	"golang.org/x/tools/go/analysis/passes/unreachable"
+	"golang.org/x/tools/go/analysis/passes/unsafeptr"
+	"golang.org/x/tools/go/analysis/passes/unusedresult"
 	"golang.org/x/tools/go/analysis/passes/unusedwrite"
 	"golang.org/x/tools/go/analysis/passes/waitgroup"
 	"golang.org/x/tools/go/packages"
@@ -122,17 +152,6 @@ func (o Ops) vet(ctx context.Context) error {
 	}
 	if err = diffCheck(ctx, "go fix"); err != nil {
 		return err
-	}
-
-	// go vet (all modules)
-	for _, mod := range mods {
-		if !hasPackages(ctx, mod) {
-			continue
-		}
-		err = Build.Exec(ctx, "go", "-C", mod, "vet", "./...")
-		if err != nil {
-			return fmt.Errorf("go vet in %s: %w", mod, err)
-		}
 	}
 
 	// go.mod replace check (already recursive)
@@ -666,6 +685,21 @@ func isTestdataPath(p string) bool {
 		p == "testdata"
 }
 
+func isTestFile(pos string) bool {
+	// pos is "file:line:col" or "file:line"
+	file, _, _ := strings.Cut(pos, ":")
+	return strings.HasSuffix(file, "_test.go")
+}
+
+func isTestdataError(pos string) bool {
+	file, _, _ := strings.Cut(pos, ":")
+	return isTestdataPath(file)
+}
+
+func isVersionError(msg string) bool {
+	return strings.Contains(msg, "requires go1.")
+}
+
 // DevNull returns the platform-appropriate null device path.
 func DevNull(os string) string {
 	if os == "windows" {
@@ -808,30 +842,7 @@ func mingoFix(ctx context.Context, mods []string) error {
 				"mingo in %s: %w", mod, err,
 			)
 		}
-		minVer, err := strconv.Atoi(ver)
-		if err != nil {
-			return fmt.Errorf(
-				"mingo version %q: %w", ver, err,
-			)
-		}
-		// Read the current go directive. Only upgrade,
-		// never downgrade: tests may use newer features
-		// than the library source code.
-		cur, cerr := Build.Read(ctx,
-			"go", "-C", mod, "list", "-m", "-f",
-			"{{.GoVersion}}",
-		)
-		if cerr == nil {
-			parts := strings.SplitN(cur, ".", 2)
-			if len(parts) >= 2 {
-				if curMinor, err := strconv.Atoi(
-					parts[1],
-				); err == nil && curMinor > minVer {
-					minVer = curMinor
-				}
-			}
-		}
-		goVer := "1." + strconv.Itoa(minVer)
+		goVer := "1." + ver
 		err = Build.Exec(ctx, "go", "-C", mod,
 			"mod", "edit", "-go="+goVer,
 		)
@@ -889,6 +900,25 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 		if len(pkgs) == 0 {
 			continue
 		}
+		// Check for type errors from package loading.
+		// Filter version-related errors from test files:
+		// mingo sets the go directive based on non-test
+		// source, so tests may use newer Go features.
+		var buf bytes.Buffer
+		for _, pkg := range pkgs {
+			for _, e := range pkg.Errors {
+				pos := e.Pos
+				if isTestFile(pos) &&
+					isVersionError(e.Msg) {
+					continue
+				}
+				if isTestdataError(pos) {
+					continue
+				}
+				fmt.Fprintf(&buf, "%s: %s\n",
+					pos, e.Msg)
+			}
+		}
 		graph, err := gochecker.Analyze(
 			[]*analysis.Analyzer{
 				checker.NewAnalyzer(Analyzers()...),
@@ -899,7 +929,6 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 			return fmt.Errorf("run analyzers in %s: %w", mod, err)
 		}
 		fset := pkgs[0].Fset
-		var buf bytes.Buffer
 		for act := range graph.All() {
 			for _, d := range act.Diagnostics {
 				pos := fset.Position(d.Pos)
@@ -1016,10 +1045,21 @@ func applyFixes(
 // Analyzers returns the standard set of analyzers.
 func Analyzers() []*analysis.Analyzer {
 	return []*analysis.Analyzer{
+		appends.Analyzer,
+		asmdecl.Analyzer,
+		assign.Analyzer,
+		atomic.Analyzer,
 		atomicalign.Analyzer,
+		bools.Analyzer,
+		buildtag.Analyzer,
+		cgocall.Analyzer,
 		composite.Analyzer,
 		copylock.Analyzer,
 		deepequalerrors.Analyzer,
+		defers.Analyzer,
+		directive.Analyzer,
+		errorsas.Analyzer,
+		framepointer.Analyzer,
 		deprecated.Analyzer,
 		embeddirective.Analyzer,
 		errcheck.Analyzer,
@@ -1028,22 +1068,42 @@ func Analyzers() []*analysis.Analyzer {
 		gofix.Analyzer,
 		hostport.Analyzer,
 		httpmux.Analyzer,
+		httpresponse.Analyzer,
+		ifaceassert.Analyzer,
 		infertypeargs.Analyzer,
 		linelen.Analyzer,
+		loopclosure.Analyzer,
+		lostcancel.Analyzer,
 		maprange.Analyzer,
 		modernize.Analyzer,
+		nilfunc.Analyzer,
 		nilness.Analyzer,
 		nonewvars.Analyzer,
 		noresultvalues.Analyzer,
+		printf.Analyzer,
 		recursiveiter.Analyzer,
 		reflectvaluecompare.Analyzer,
+		shift.Analyzer,
+		sigchanyzer.Analyzer,
 		simplifycompositelit.Analyzer,
 		simplifyrange.Analyzer,
 		simplifyslice.Analyzer,
+		slog.Analyzer,
 		sortslice.Analyzer,
+		stdmethods.Analyzer,
+		stdversion.Analyzer,
+		stringintconv.Analyzer,
+		structtag.Analyzer,
+		testinggoroutine.Analyzer,
+		tests.Analyzer,
 		tidytypes.Analyzer,
+		timeformat.Analyzer,
+		unmarshal.Analyzer,
+		unreachable.Analyzer,
+		unsafeptr.Analyzer,
 		unusedfunc.Analyzer,
 		unusedparams.Analyzer,
+		unusedresult.Analyzer,
 		unusedvariable.Analyzer,
 		unusedwrite.Analyzer,
 		waitgroup.Analyzer,
