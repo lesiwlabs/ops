@@ -6,7 +6,7 @@ require (
 	github.com/Antonboom/errname v1.1.1
 	github.com/google/go-cmp v0.7.0
 	golang.org/x/tools v0.39.0
-	lesiw.io/checker v0.12.0
+	lesiw.io/checker v0.12.1-0.20260208011356-b1121c49fa1e
 	lesiw.io/clerk v0.2.0
 	lesiw.io/command v0.0.0-20260102111911-9b5a01e7c56b
 	lesiw.io/defers v0.9.0
@@ -14,7 +14,7 @@ require (
 	lesiw.io/fs v0.6.0
 	lesiw.io/linelen v0.2.0
 	lesiw.io/ops v0.14.0
-	lesiw.io/plscheck v0.20.0
+	lesiw.io/plscheck v0.21.0
 	lesiw.io/tidytypes v0.2.0
 )
 
