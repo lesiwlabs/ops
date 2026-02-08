@@ -244,10 +244,33 @@ func Check(compile func(context.Context) error) error {
 // InCleanTree extracts the committed git tree into a
 // temporary directory and runs fn there. This ensures checks
 // run against committed state only.
+//
+// When CI is set in the environment, the working directory is
+// assumed to be clean and checks run in place.
 var InCleanTree = inCleanTree
 
 func inCleanTree(fn func(context.Context) error) error {
 	ctx := context.Background()
+	if Local.Env(ctx, "CI") != "" {
+		return inPlace(ctx, fn)
+	}
+	return inTempDir(ctx, fn)
+}
+
+func inPlace(
+	ctx context.Context, fn func(context.Context) error,
+) error {
+	before, err := takeSnapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("initial snapshot: %w", err)
+	}
+	ctx = withSnapshot(ctx, before)
+	return fn(ctx)
+}
+
+func inTempDir(
+	ctx context.Context, fn func(context.Context) error,
+) error {
 	tmp, err := Local.Temp(ctx, "op-check/")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)

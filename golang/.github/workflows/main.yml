@@ -39,13 +39,25 @@ jobs:
     needs: gate
     strategy:
       matrix:
-        go: ["1", "1.23"]
+        go: [stable, oldstable]
     runs-on: ubuntu-latest
-    container: golang:${{ matrix.go }}-alpine
     steps:
-      - run: apk add --no-cache git
       - uses: actions/checkout@v4
-      - run: go run lesiw.io/op@latest
+      - id: go-version
+        run: |
+          if [ "${{ matrix.go }}" = "stable" ]; then
+            echo "version=$(curl -s 'https://go.dev/VERSION?m=text' | head -1)" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[1].version')" >> $GITHUB_OUTPUT
+          fi
+      - run: |
+          docker run --rm -v $PWD:/work -w /work -e CI alpine:latest sh -c '
+            apk add --no-cache curl tar
+            curl -L "https://go.dev/dl/${{ steps.go-version.outputs.version }}.linux-amd64.tar.gz" | tar -C /usr/local -xz
+            export PATH=/usr/local/go/bin:$PATH
+            export PATH=$(go env GOPATH)/bin:$PATH
+            go run lesiw.io/op@latest
+          '
   freebsd:
     needs: gate
     strategy:
@@ -54,8 +66,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - id: go-version
+        run: |
+          if [ "${{ matrix.go }}" = "stable" ]; then
+            echo "version=$(curl -s 'https://go.dev/VERSION?m=text' | head -1)" >> $GITHUB_OUTPUT
+          else
+            echo "version=$(curl -s 'https://go.dev/dl/?mode=json' | jq -r '.[1].version')" >> $GITHUB_OUTPUT
+          fi
       - uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y git go
-          run: go run lesiw.io/op@latest
+          envs: CI
+          run: |
+            pkg install -y curl
+            curl -L "https://go.dev/dl/${{ steps.go-version.outputs.version }}.freebsd-amd64.tar.gz" | tar -C /usr/local -xz
+            export PATH=/usr/local/go/bin:$PATH
+            export PATH=$(go env GOPATH)/bin:$PATH
+            go run lesiw.io/op@latest
