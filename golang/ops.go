@@ -460,7 +460,10 @@ func findModules(
 		}
 		entryPath := path.Join(dir, name)
 		if entry.IsDir() {
-			err := findModules(ctx, sh, entryPath, mods)
+			if gitIgnored(ctx, entryPath) {
+				continue
+			}
+			err = findModules(ctx, sh, entryPath, mods)
 			if err != nil {
 				return err
 			}
@@ -653,6 +656,9 @@ func goFiles(ctx context.Context, dir string) ([]string, error) {
 		}
 		p := path.Join(dir, name)
 		if entry.IsDir() {
+			if gitIgnored(ctx, p) {
+				continue
+			}
 			sub, err := goFiles(ctx, p)
 			if err != nil {
 				return nil, err
@@ -665,6 +671,13 @@ func goFiles(ctx context.Context, dir string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func gitIgnored(ctx context.Context, p string) bool {
+	if Local.Env(ctx, "CI") != "" {
+		return false
+	}
+	return Local.Do(ctx, "git", "check-ignore", "-q", p) == nil
 }
 
 func installGoimports(ctx context.Context) error {
