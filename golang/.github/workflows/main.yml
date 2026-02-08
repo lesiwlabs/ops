@@ -11,7 +11,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: stable
-      - run: '"$(wget -O- lesiw.io/op | sh)"'
+      - run: go run lesiw.io/op@latest
   test:
     needs: gate
     strategy:
@@ -34,7 +34,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-      - run: '"$(wget -O- lesiw.io/op | sh)"'
+      - run: go run lesiw.io/op@latest
   alpine:
     needs: gate
     strategy:
@@ -43,9 +43,9 @@ jobs:
     runs-on: ubuntu-latest
     container: golang:${{ matrix.go }}-alpine
     steps:
-      - run: apk add --no-cache git wget
+      - run: apk add --no-cache git
       - uses: actions/checkout@v4
-      - run: '"$(wget -O- lesiw.io/op | sh)"'
+      - run: go run lesiw.io/op@latest
   freebsd:
     needs: gate
     strategy:
@@ -57,5 +57,5 @@ jobs:
       - uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y go wget
-          run: '"$(wget -O- lesiw.io/op | sh)"'
+          prepare: pkg install -y go
+          run: go run lesiw.io/op@latest
