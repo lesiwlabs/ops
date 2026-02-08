@@ -39,7 +39,7 @@ jobs:
     needs: gate
     strategy:
       matrix:
-        go: [stable, oldstable]
+        go: ["1", "1.23"]
     runs-on: ubuntu-latest
     container: golang:${{ matrix.go }}-alpine
     steps:
@@ -57,5 +57,5 @@ jobs:
       - uses: vmactions/freebsd-vm@v1
         with:
           usesh: true
-          prepare: pkg install -y go
+          prepare: pkg install -y git go
           run: go run lesiw.io/op@latest

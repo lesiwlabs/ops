@@ -417,7 +417,9 @@ func parseTarSnapshot(r io.Reader) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		snap[path.Join(".", hdr.Name)] = string(data)
+		snap[path.Join(".", hdr.Name)] = strings.ReplaceAll(
+			string(data), "\r\n", "\n",
+		)
 	}
 }
 
@@ -453,7 +455,7 @@ func walkSnapshot(
 		if err != nil {
 			return err
 		}
-		snap[p] = string(data)
+		snap[p] = strings.ReplaceAll(string(data), "\r\n", "\n")
 	}
 	return nil
 }
