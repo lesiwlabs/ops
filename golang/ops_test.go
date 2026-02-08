@@ -48,6 +48,7 @@ func TestTest(t *testing.T) {
 
 	got := mock.Calls(m, "go")
 	want := []mock.Call{
+		{Args: []string{"go", "-C", ".", "list", "./..."}},
 		{
 			Args: []string{"go", "-C", ".", "test",
 				"-count=1", "-shuffle=on", "./..."},

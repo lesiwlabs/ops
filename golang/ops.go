@@ -125,6 +125,9 @@ func (o Ops) vet(ctx context.Context) error {
 
 	// go vet (all modules)
 	for _, mod := range mods {
+		if !hasPackages(ctx, mod) {
+			continue
+		}
 		err = Build.Exec(ctx, "go", "-C", mod, "vet", "./...")
 		if err != nil {
 			return fmt.Errorf("go vet in %s: %w", mod, err)
@@ -483,6 +486,10 @@ func runTests(ctx context.Context, mods []string, short bool) error {
 	}
 
 	for _, mod := range mods {
+		if !hasPackages(ctx, mod) {
+			continue
+		}
+
 		// Pass 1: CGO_ENABLED=0, no race detector
 		args := append(
 			[]string{"go", "-C", mod,
@@ -671,6 +678,10 @@ func goFiles(ctx context.Context, dir string) ([]string, error) {
 		}
 	}
 	return files, nil
+}
+
+func hasPackages(ctx context.Context, mod string) bool {
+	return Build.Do(ctx, "go", "-C", mod, "list", "./...") == nil
 }
 
 func gitIgnored(ctx context.Context, p string) bool {
