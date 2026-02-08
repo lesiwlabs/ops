@@ -767,8 +767,10 @@ func mingoCheck(ctx context.Context, mods []string) error {
 		}
 		// Retry without deps for modules with replace
 		// directives that prevent dependency scanning.
+		// Drop -strict: dependencies may force a higher
+		// go directive than the source code minimum.
 		err = Build.Exec(ctx,
-			"mingo", "-check", "-strict",
+			"mingo", "-check",
 			"-deps", "none", mod,
 		)
 		if err != nil {
