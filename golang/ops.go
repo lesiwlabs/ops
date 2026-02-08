@@ -146,6 +146,11 @@ func (o Ops) vet(ctx context.Context) error {
 		return err
 	}
 
+	// mingo version check (all modules)
+	if err := mingoCheck(ctx, mods); err != nil {
+		return err
+	}
+
 	// short tests (all modules, twice: without and with race detector)
 	if err := runTests(ctx, mods, true); err != nil {
 		return err
@@ -216,7 +221,23 @@ func (o Ops) fix(ctx context.Context) error {
 	}
 
 	// fixable analyzers (all modules)
-	return runFixAnalyzers(ctx, mods)
+	if err := runFixAnalyzers(ctx, mods); err != nil {
+		return err
+	}
+
+	// mingo version fix (all modules)
+	if err := mingoFix(ctx, mods); err != nil {
+		return err
+	}
+
+	// go mod tidy again (go version may have changed)
+	for _, mod := range mods {
+		err = Build.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		if err != nil {
+			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
+		}
+	}
+	return nil
 }
 
 func (Ops) Lint() error {
@@ -682,6 +703,55 @@ func goFiles(ctx context.Context, dir string) ([]string, error) {
 
 func hasPackages(ctx context.Context, mod string) bool {
 	return Build.Do(ctx, "go", "-C", mod, "list", "./...") == nil
+}
+
+func installMingo(ctx context.Context) error {
+	err := command.Do(ctx, Build.Unshell(), "mingo", "--help")
+	if command.NotFound(err) {
+		err = Build.Exec(ctx,
+			"go", "install",
+			"github.com/bobg/mingo/cmd/mingo@latest")
+		if err != nil {
+			return err
+		}
+	}
+	Build.Handle("mingo", Build.Unshell())
+	return nil
+}
+
+func mingoCheck(ctx context.Context, mods []string) error {
+	if err := installMingo(ctx); err != nil {
+		return err
+	}
+	for _, mod := range mods {
+		err := Build.Exec(ctx,
+			"mingo", "-check", "-strict", "-tests", mod)
+		if err != nil {
+			return fmt.Errorf("mingo check in %s: %w",
+				mod, err)
+		}
+	}
+	return nil
+}
+
+func mingoFix(ctx context.Context, mods []string) error {
+	if err := installMingo(ctx); err != nil {
+		return err
+	}
+	for _, mod := range mods {
+		ver, err := Build.Read(ctx, "mingo", "-tests", mod)
+		if err != nil {
+			return fmt.Errorf("mingo in %s: %w", mod, err)
+		}
+		goVer := "1." + ver
+		err = Build.Exec(ctx, "go", "-C", mod,
+			"mod", "edit", "-go="+goVer)
+		if err != nil {
+			return fmt.Errorf(
+				"go mod edit in %s: %w", mod, err)
+		}
+	}
+	return nil
 }
 
 func gitIgnored(ctx context.Context, p string) bool {
