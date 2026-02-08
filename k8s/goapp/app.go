@@ -5,21 +5,78 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
 	"math/rand/v2"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
-	"labs.lesiw.io/ops/goapp" // Application name is goapp.Name.
+	"labs.lesiw.io/ops/goapp"
 	"lesiw.io/command"
+	"lesiw.io/command/ctr"
 	"lesiw.io/command/sub"
+	"lesiw.io/command/sys"
+	"lesiw.io/defers"
 )
 
-var spkez, ctr, k8s command.Machine
-var k8scfg string
+var ctl = ctr.Ctl(sys.Machine())
+
+var getSpkez = sync.OnceValues(func() (command.Machine, error) {
+	ctx := context.Background()
+	sh := command.Shell(sys.Machine())
+	sh.Handle("go", sh.Unshell())
+	sh.Handle("spkez", sh.Unshell())
+
+	err := sh.Do(ctx, "spkez", "--version")
+	if command.NotFound(err) {
+		err := sh.Exec(ctx, "go", "install", "lesiw.io/spkez@latest")
+		if err != nil {
+			return nil, fmt.Errorf("could not install spkez: %w", err)
+		}
+	} else if err != nil {
+		return nil, fmt.Errorf("error checking spkez: %w", err)
+	}
+
+	return sub.Machine(sh, "spkez"), nil
+})
+
+var getKubectl = sync.OnceValues(func() (command.Machine, error) {
+	ctx := context.Background()
+	spkez, err := getSpkez()
+	if err != nil {
+		return nil, err
+	}
+	m := ctr.Machine(sys.Machine(), "bitnami/kubectl", "--entrypoint", "")
+	defers.Add(func() { _ = command.Shutdown(context.Background(), m) })
+	_, err = command.Copy(
+		command.NewWriter(ctx, m,
+			"sh", "-c", "mkdir -p /.kube && cat > /.kube/config"),
+		command.NewReader(ctx, spkez, "get", "k8s/config"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not set kubeconfig: %w", err)
+	}
+	return sub.Machine(m, "kubectl"), nil
+})
+
+var getHelm = sync.OnceValues(func() (command.Machine, error) {
+	ctx := context.Background()
+	spkez, err := getSpkez()
+	if err != nil {
+		return nil, err
+	}
+	m := ctr.Machine(sys.Machine(), "alpine/helm", "--entrypoint", "")
+	defers.Add(func() { _ = command.Shutdown(context.Background(), m) })
+	_, err = command.Copy(
+		command.NewWriter(ctx, m,
+			"sh", "-c", "mkdir -p /root/.kube && cat > /root/.kube/config"),
+		command.NewReader(ctx, spkez, "get", "k8s/config"),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not set kubeconfig: %w", err)
+	}
+	return m, nil
+})
 
 type Ops struct {
 	goapp.Ops
@@ -44,8 +101,14 @@ func (op Ops) Deploy() error {
 	if err := op.Build(); err != nil {
 		return fmt.Errorf("could not build app: %w", err)
 	}
-	img, err := op.createImage(filepath.Join(
-		"out", goapp.Name+"-linux-aarch64"))
+	ctx := context.Background()
+	sh := command.Shell(sys.Machine())
+	err := sh.Rename(ctx,
+		"out/"+goapp.Name+"-linux-aarch64", "out/app")
+	if err != nil {
+		return fmt.Errorf("could not rename binary: %w", err)
+	}
+	img, err := op.createImage(ctx, sh)
 	if err != nil {
 		return fmt.Errorf("could not create container: %w", err)
 	}
@@ -65,26 +128,29 @@ func (op Ops) ForceDestroy() error {
 
 func (op Ops) destroy(force bool) error {
 	ctx := context.Background()
-	// TODO: Make user type app name to destroy.
 	if !force {
 		if err := op.Backup(); err != nil {
 			return fmt.Errorf("could not backup the application: %w", err)
 		}
 	}
-	helm := sub.Machine(ctr, "run", "-ti", "--rm",
-		"-v", k8scfg+":/root/.kube/config",
-		"-v", "helmcache:/root/.helm/cache",
-		"alpine/helm",
-	)
-	err := command.Exec(ctx, helm, "uninstall", goapp.Name)
+	helm, err := getHelm()
+	if err != nil {
+		return err
+	}
+	err = command.Exec(ctx, helm, "helm", "uninstall", goapp.Name)
 	if err != nil {
 		return fmt.Errorf("could not delete helm release: %w", err)
 	}
 	if op.Postgres {
-		pg := sub.Machine(k8s,
+		kubectl, err := getKubectl()
+		if err != nil {
+			return err
+		}
+		pg := sub.Machine(kubectl,
 			"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 		)
-		err := command.Exec(ctx, pg, fmt.Sprintf("drop role %s;", goapp.Name))
+		err = command.Exec(ctx, pg,
+			fmt.Sprintf("drop role %s;", goapp.Name))
 		if err != nil {
 			return fmt.Errorf("could not drop postgres role: %w", err)
 		}
@@ -102,36 +168,32 @@ func (Ops) Restore() error {
 	return nil
 }
 
-func (op Ops) createImage(app string) (string, error) {
-	ctx := context.Background()
-	file, err := os.Create("Dockerfile")
+func (op Ops) createImage(
+	ctx context.Context, sh *command.Sh,
+) (string, error) {
+	img := fmt.Sprintf("ctr.lesiw.dev/%s:%d",
+		goapp.Name, time.Now().Unix())
+	_, err := command.Copy(
+		command.NewWriter(ctx, ctl,
+			"import", "--change", `CMD ["/app"]`, "-", img),
+		sh.OpenBuffer(ctx, "out/"),
+	)
 	if err != nil {
-		return "", fmt.Errorf("could not create Dockerfile: %w", err)
+		return "", fmt.Errorf("could not import container: %w", err)
 	}
-	defer func() { _ = os.Remove(file.Name()) }()
-	_, err = fmt.Fprintf(file, `FROM scratch
-COPY %s /app
-CMD [ "/app" ]
-`, app)
+	spkez, err := getSpkez()
 	if err != nil {
-		return "", fmt.Errorf("could not write to Dockerfile: %w", err)
+		return "", err
 	}
-	if err := file.Close(); err != nil {
-		return "", fmt.Errorf("could not close Dockerfile: %w", err)
-	}
-	img := fmt.Sprintf("ctr.lesiw.dev/%s:%d", goapp.Name, time.Now().Unix())
-	if err := command.Exec(ctx, ctr, "build", "-t", img, "."); err != nil {
-		return "", fmt.Errorf("could not build container: %w", err)
-	}
-	_, err = io.Copy(
-		command.NewWriter(ctx, ctr, "login",
+	_, err = command.Copy(
+		command.NewWriter(ctx, ctl, "login",
 			"--password-stdin", "-u", "ll", "ctr.lesiw.dev"),
 		command.NewReader(ctx, spkez, "get", "ctr.lesiw.dev/auth"),
 	)
 	if err != nil {
 		return "", fmt.Errorf("could not docker login: %w", err)
 	}
-	if err := command.Exec(ctx, ctr, "push", img); err != nil {
+	if err := command.Exec(ctx, ctl, "push", img); err != nil {
 		return "", fmt.Errorf("could not push container: %w", err)
 	}
 	return img, nil
@@ -329,36 +391,29 @@ spec:
 `
 
 func (op Ops) deployImage(img string) error {
-	chart, err := os.MkdirTemp("", "chart")
+	ctx := context.Background()
+	helm, err := getHelm()
 	if err != nil {
-		return fmt.Errorf("could not create temporary directory: %w", err)
+		return err
 	}
-	defer func() { _ = os.RemoveAll(chart) }()
-	chart, err = filepath.Abs(chart)
+	err = command.Exec(ctx, helm, "mkdir", "-p", "/chart/templates")
 	if err != nil {
-		return fmt.Errorf("could not get full path of chart dir: %w", err)
+		return fmt.Errorf("could not create chart directory: %w", err)
 	}
-	err = os.WriteFile(
-		filepath.Join(chart, "Chart.yaml"),
-		fmt.Appendf(nil, chartYaml, goapp.Name),
-		0755,
+	_, err = command.Copy(
+		command.NewWriter(ctx, helm,
+			"sh", "-c", "cat > /chart/Chart.yaml"),
+		strings.NewReader(fmt.Sprintf(chartYaml, goapp.Name)),
 	)
 	if err != nil {
 		return fmt.Errorf("could not create Chart.yaml: %w", err)
 	}
-	tmpl := filepath.Join(chart, "templates")
-	if err := os.Mkdir(tmpl, 0755); err != nil {
-		return fmt.Errorf("could not create templates directory: %w", err)
-	}
-	cfg, err := os.Create(filepath.Join(tmpl, "chart.yaml"))
-	if err != nil {
-		return fmt.Errorf("could not create chart template file: %w", err)
-	}
-	w := errWriter{w: cfg}
 	ctrspec, err := op.k8sCtrSpec()
 	if err != nil {
 		return fmt.Errorf("could not create environment block: %w", err)
 	}
+	var tmpl strings.Builder
+	w := errWriter{w: &tmpl}
 	args := []any{
 		goapp.Name, img, cmp.Or(op.Memory, 32),
 		cmp.Or(op.ServiceAccount, "default"), ctrspec,
@@ -382,26 +437,28 @@ func (op Ops) deployImage(img string) error {
 	}
 	w.Printf("%s", op.K8sDefinitions)
 	if w.err != nil {
-		return fmt.Errorf("could not write to template file: %w", w.err)
+		return fmt.Errorf("could not build template: %w", w.err)
 	}
-	ctx := context.Background()
-	helm := sub.Machine(ctr, "run", "-ti", "--rm",
-		"-v", k8scfg+":/root/.kube/config",
-		"-v", "helmcache:/root/.helm/cache",
-		"-v", chart+":/chart",
-		"alpine/helm",
+	_, err = command.Copy(
+		command.NewWriter(ctx, helm,
+			"sh", "-c", "cat > /chart/templates/chart.yaml"),
+		strings.NewReader(tmpl.String()),
 	)
-	err = command.Exec(ctx, helm, "upgrade", goapp.Name, "/chart", "--install")
 	if err != nil {
-		contents, readErr := os.ReadFile(filepath.Join(tmpl, "chart.yaml"))
+		return fmt.Errorf("could not write chart template: %w", err)
+	}
+	err = command.Exec(ctx, helm,
+		"helm", "upgrade", goapp.Name, "/chart", "--install")
+	if err != nil {
+		chart, readErr := command.Read(ctx, helm,
+			"cat", "/chart/templates/chart.yaml")
 		if readErr != nil {
-			contents = fmt.Appendf(nil,
-				"<error reading file: %s>", readErr)
+			chart = fmt.Sprintf("<error reading file: %s>", readErr)
 		}
 		return fmt.Errorf(
-			"could not helm install: %w\n---\nchart.yml:\n%s", err, contents,
-		)
+			"could not helm install: %w\n---\nchart.yml:\n%s", err, chart)
 	}
+	_ = command.Do(ctx, helm, "rm", "-rf", "/chart")
 	return nil
 }
 
@@ -418,6 +475,10 @@ func (op Ops) k8sCtrSpec() (string, error) {
 			"            value: %s\n", k, v))
 	}
 	for k, v := range op.EnvSecrets {
+		spkez, err := getSpkez()
+		if err != nil {
+			return "", err
+		}
 		r, err := command.Read(ctx, spkez, "get", v)
 		if err != nil {
 			return "", fmt.Errorf("could not read secret %q: %w", v, err)
@@ -442,8 +503,12 @@ func (op Ops) k8sCtrSpec() (string, error) {
 
 func (op Ops) writeSecret(k, v string) error {
 	ctx := context.Background()
-	_, err := io.Copy(
-		command.NewWriter(ctx, k8s, "apply", "-f", "-"),
+	kubectl, err := getKubectl()
+	if err != nil {
+		return err
+	}
+	_, err = command.Copy(
+		command.NewWriter(ctx, kubectl, "apply", "-f", "-"),
 		strings.NewReader(fmt.Sprintf(secretCfg, k, "data", v)),
 	)
 	if err != nil {
@@ -462,13 +527,17 @@ stringData:
 
 func createPostgresRole(name string) error {
 	ctx := context.Background()
+	kubectl, err := getKubectl()
+	if err != nil {
+		return err
+	}
 	secretName := name + "-db-secret"
 	var secretPass string
-	err := command.Do(ctx, k8s, "get", "secrets", secretName)
+	err = command.Do(ctx, kubectl, "get", "secrets", secretName)
 	if err != nil {
 		secretPass = randStr(32)
-		_, err = io.Copy(
-			command.NewWriter(ctx, k8s, "apply", "-f", "-"),
+		_, err = command.Copy(
+			command.NewWriter(ctx, kubectl, "apply", "-f", "-"),
 			strings.NewReader(fmt.Sprintf(
 				secretCfg, secretName, "secret", secretPass)),
 		)
@@ -476,7 +545,7 @@ func createPostgresRole(name string) error {
 			return fmt.Errorf("could not generate secret: %w", err)
 		}
 	} else {
-		encoded, err := command.Read(ctx, k8s,
+		encoded, err := command.Read(ctx, kubectl,
 			"get", "secret", secretName,
 			"-o", "jsonpath={.data.secret}",
 		)
@@ -489,7 +558,7 @@ func createPostgresRole(name string) error {
 		}
 		secretPass = string(decoded)
 	}
-	pg := sub.Machine(k8s,
+	pg := sub.Machine(kubectl,
 		"exec", "postgres-1", "-c", "postgres", "--", "psql", "-c",
 	)
 	sql := `DO
