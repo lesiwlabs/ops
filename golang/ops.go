@@ -228,59 +228,86 @@ func (Ops) Cov() error {
 func (Ops) Promote() error {
 	ctx := context.Background()
 
-	branch, err := Local.Read(ctx, "git", "branch", "--show-current")
+	branch, err := Local.Read(ctx,
+		"git", "branch", "--show-current")
 	if err != nil {
-		return fmt.Errorf("failed to get current branch: %w", err)
+		return fmt.Errorf("get current branch: %w", err)
 	}
 	if branch != "next" {
 		return fmt.Errorf(
 			"must be on next branch (currently on %s)", branch)
 	}
 
-	if err := Local.Exec(ctx, "git", "fetch", "github"); err != nil {
-		return fmt.Errorf("failed to fetch from github: %w", err)
+	remote, err := Local.Read(ctx,
+		"git", "config", "--get", "branch.next.remote")
+	if err != nil {
+		return fmt.Errorf("get remote for next: %w", err)
 	}
 
-	out, err := Local.Read(ctx, "git", "merge-base", "--is-ancestor",
-		"github/main", "next")
+	err = Local.Exec(ctx, "git", "fetch", remote)
+	if err != nil {
+		return fmt.Errorf("fetch from %s: %w", remote, err)
+	}
+
+	remoteMain := remote + "/main"
+	out, err := Local.Read(ctx, "git", "merge-base",
+		"--is-ancestor", remoteMain, "next")
 	if err != nil {
 		return fmt.Errorf(
-			"cannot fast-forward: main has diverged from next\n%s", out,
+			"cannot fast-forward: main has diverged from"+
+				" next\n%s", out,
 		)
 	}
 
-	mainHash, err := Local.Read(ctx, "git", "rev-parse", "github/main")
+	mainHash, err := Local.Read(ctx,
+		"git", "rev-parse", remoteMain)
 	if err != nil {
-		return fmt.Errorf("failed to get main hash: %w", err)
+		return fmt.Errorf("get main hash: %w", err)
 	}
-	nextHash, err := Local.Read(ctx, "git", "rev-parse", "next")
+	nextHash, err := Local.Read(ctx,
+		"git", "rev-parse", "next")
 	if err != nil {
-		return fmt.Errorf("failed to get next hash: %w", err)
+		return fmt.Errorf("get next hash: %w", err)
 	}
 	if mainHash == nextHash {
 		return fmt.Errorf("next and main are at the same commit")
 	}
 
 	fmt.Println("Checking CI status...")
+	ciSha, err := Local.Read(ctx, "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "headSha", "--jq", ".[0].headSha")
+	if err != nil {
+		return fmt.Errorf("check CI status: %w", err)
+	}
+	if ciSha != nextHash {
+		return fmt.Errorf(
+			"latest CI run is for %s, not %s",
+			ciSha, nextHash)
+	}
 	ciStatus, err := Local.Read(ctx, "gh", "run", "list",
 		"--branch", "next", "--limit", "1",
-		"--json", "conclusion", "--jq", ".[0].conclusion")
+		"--json", "conclusion",
+		"--jq", ".[0].conclusion")
 	if err != nil {
-		return fmt.Errorf("failed to check CI status: %w", err)
+		return fmt.Errorf("check CI status: %w", err)
 	}
 	if ciStatus != "success" {
-		return fmt.Errorf("CI has not passed (status: %s)", ciStatus)
+		return fmt.Errorf(
+			"CI has not passed (status: %s)", ciStatus)
 	}
 
 	fmt.Println("Promoting next to main...")
-	err = Local.Exec(ctx, "git", "push", "github", "next:main")
+	err = Local.Exec(ctx,
+		"git", "push", remote, "next:main")
 	if err != nil {
-		return fmt.Errorf("failed to push next:main: %w", err)
+		return fmt.Errorf("push next:main: %w", err)
 	}
 
-	err = Local.Exec(ctx, "git", "fetch", "github", "main:main")
+	err = Local.Exec(ctx,
+		"git", "fetch", remote, "main:main")
 	if err != nil {
-		return fmt.Errorf("failed to update local main: %w", err)
+		return fmt.Errorf("update local main: %w", err)
 	}
 
 	fmt.Println("Successfully promoted next to main")

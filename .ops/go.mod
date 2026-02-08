@@ -1,4 +1,4 @@
-module ops.localhost
+module test/ops
 
 go 1.24.7
 

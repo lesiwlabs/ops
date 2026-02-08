@@ -97,12 +97,21 @@ var buffer = strings.NewReader
 
 func TestPromoteSuccess(t *testing.T) {
 	m := setupMock(t, "git", "gh")
-	m.Return(buffer("next\n"), "git", "branch", "--show-current")
-	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
-	m.Return(buffer("def456\n"), "git", "rev-parse", "next")
-	m.Return(buffer("success\n"), "gh", "run", "list",
+	m.Return(buffer("next"),
+		"git", "branch", "--show-current")
+	m.Return(buffer("origin"),
+		"git", "config", "--get", "branch.next.remote")
+	m.Return(buffer("abc123"),
+		"git", "rev-parse", "origin/main")
+	m.Return(buffer("def456"),
+		"git", "rev-parse", "next")
+	m.Return(buffer("def456"), "gh", "run", "list",
 		"--branch", "next", "--limit", "1",
-		"--json", "conclusion", "--jq", ".[0].conclusion")
+		"--json", "headSha", "--jq", ".[0].headSha")
+	m.Return(buffer("success"), "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "conclusion",
+		"--jq", ".[0].conclusion")
 
 	err := Ops{}.Promote()
 	if err != nil {
@@ -112,15 +121,23 @@ func TestPromoteSuccess(t *testing.T) {
 	gotGit := mock.Calls(m, "git")
 	wantGit := []mock.Call{
 		{Args: []string{"git", "branch", "--show-current"}},
-		{Args: []string{"git", "fetch", "github"}},
+		{Args: []string{
+			"git", "config", "--get",
+			"branch.next.remote",
+		}},
+		{Args: []string{"git", "fetch", "origin"}},
 		{Args: []string{
 			"git", "merge-base", "--is-ancestor",
-			"github/main", "next",
+			"origin/main", "next",
 		}},
-		{Args: []string{"git", "rev-parse", "github/main"}},
+		{Args: []string{"git", "rev-parse", "origin/main"}},
 		{Args: []string{"git", "rev-parse", "next"}},
-		{Args: []string{"git", "push", "github", "next:main"}},
-		{Args: []string{"git", "fetch", "github", "main:main"}},
+		{Args: []string{
+			"git", "push", "origin", "next:main",
+		}},
+		{Args: []string{
+			"git", "fetch", "origin", "main:main",
+		}},
 	}
 	if !cmp.Equal(wantGit, gotGit) {
 		t.Errorf("git calls: -want +got\n%s",
@@ -132,7 +149,14 @@ func TestPromoteSuccess(t *testing.T) {
 		{Args: []string{
 			"gh", "run", "list",
 			"--branch", "next", "--limit", "1",
-			"--json", "conclusion", "--jq", ".[0].conclusion",
+			"--json", "headSha",
+			"--jq", ".[0].headSha",
+		}},
+		{Args: []string{
+			"gh", "run", "list",
+			"--branch", "next", "--limit", "1",
+			"--json", "conclusion",
+			"--jq", ".[0].conclusion",
 		}},
 	}
 	if !cmp.Equal(wantGh, gotGh) {
@@ -143,12 +167,21 @@ func TestPromoteSuccess(t *testing.T) {
 
 func TestPromoteCIFailed(t *testing.T) {
 	m := setupMock(t, "git", "gh")
-	m.Return(buffer("next\n"), "git", "branch", "--show-current")
-	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
-	m.Return(buffer("def456\n"), "git", "rev-parse", "next")
-	m.Return(buffer("PENDING\n"), "gh", "run", "list",
+	m.Return(buffer("next"),
+		"git", "branch", "--show-current")
+	m.Return(buffer("origin"),
+		"git", "config", "--get", "branch.next.remote")
+	m.Return(buffer("abc123"),
+		"git", "rev-parse", "origin/main")
+	m.Return(buffer("def456"),
+		"git", "rev-parse", "next")
+	m.Return(buffer("def456"), "gh", "run", "list",
 		"--branch", "next", "--limit", "1",
-		"--json", "conclusion", "--jq", ".[0].conclusion")
+		"--json", "headSha", "--jq", ".[0].headSha")
+	m.Return(buffer("PENDING"), "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "conclusion",
+		"--jq", ".[0].conclusion")
 
 	err := Ops{}.Promote()
 	if err == nil {
@@ -159,9 +192,33 @@ func TestPromoteCIFailed(t *testing.T) {
 	}
 }
 
+func TestPromoteCIStale(t *testing.T) {
+	m := setupMock(t, "git", "gh")
+	m.Return(buffer("next"),
+		"git", "branch", "--show-current")
+	m.Return(buffer("origin"),
+		"git", "config", "--get", "branch.next.remote")
+	m.Return(buffer("abc123"),
+		"git", "rev-parse", "origin/main")
+	m.Return(buffer("def456"),
+		"git", "rev-parse", "next")
+	m.Return(buffer("old789"), "gh", "run", "list",
+		"--branch", "next", "--limit", "1",
+		"--json", "headSha", "--jq", ".[0].headSha")
+
+	err := Ops{}.Promote()
+	if err == nil {
+		t.Fatal("Promote() should fail when CI ran on wrong commit")
+	}
+	if !strings.Contains(err.Error(), "latest CI run is for") {
+		t.Errorf("error = %v, want 'latest CI run is for'", err)
+	}
+}
+
 func TestPromoteWrongBranch(t *testing.T) {
 	m := setupMock(t, "git")
-	m.Return(buffer("main\n"), "git", "branch", "--show-current")
+	m.Return(buffer("main"),
+		"git", "branch", "--show-current")
 
 	err := Ops{}.Promote()
 	if err == nil {
@@ -174,9 +231,13 @@ func TestPromoteWrongBranch(t *testing.T) {
 
 func TestPromoteMainDiverged(t *testing.T) {
 	m := setupMock(t, "git")
-	m.Return(buffer("next\n"), "git", "branch", "--show-current")
+	m.Return(buffer("next"),
+		"git", "branch", "--show-current")
+	m.Return(buffer("origin"),
+		"git", "config", "--get", "branch.next.remote")
 	m.Return(command.Fail(&command.Error{Code: 1}),
-		"git", "merge-base", "--is-ancestor", "github/main", "next")
+		"git", "merge-base", "--is-ancestor",
+		"origin/main", "next")
 
 	err := Ops{}.Promote()
 	if err == nil {
@@ -189,9 +250,14 @@ func TestPromoteMainDiverged(t *testing.T) {
 
 func TestPromoteAlreadyEqual(t *testing.T) {
 	m := setupMock(t, "git")
-	m.Return(buffer("next\n"), "git", "branch", "--show-current")
-	m.Return(buffer("abc123\n"), "git", "rev-parse", "github/main")
-	m.Return(buffer("abc123\n"), "git", "rev-parse", "next")
+	m.Return(buffer("next"),
+		"git", "branch", "--show-current")
+	m.Return(buffer("origin"),
+		"git", "config", "--get", "branch.next.remote")
+	m.Return(buffer("abc123"),
+		"git", "rev-parse", "origin/main")
+	m.Return(buffer("abc123"),
+		"git", "rev-parse", "next")
 
 	err := Ops{}.Promote()
 	if err == nil {
