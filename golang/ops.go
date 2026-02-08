@@ -186,6 +186,16 @@ func (o Ops) fix(ctx context.Context) error {
 		}
 	}
 
+	// go generate (all modules)
+	for _, mod := range mods {
+		err = Build.Exec(ctx,
+			"go", "-C", mod, "generate", "./...")
+		if err != nil {
+			return fmt.Errorf(
+				"go generate in %s: %w", mod, err)
+		}
+	}
+
 	// fixable analyzers (all modules)
 	return runFixAnalyzers(ctx, mods)
 }
@@ -323,6 +333,24 @@ func Check(compile func(context.Context) error) error {
 		if err := o.vet(ctx); err != nil {
 			return err
 		}
+
+		// go generate (all modules)
+		mods, err := modules(ctx)
+		if err != nil {
+			return fmt.Errorf("find modules: %w", err)
+		}
+		for _, mod := range mods {
+			err = Build.Exec(ctx,
+				"go", "-C", mod, "generate", "./...")
+			if err != nil {
+				return fmt.Errorf(
+					"go generate in %s: %w", mod, err)
+			}
+		}
+		if err = diffCheck(ctx, "go generate"); err != nil {
+			return err
+		}
+
 		if compile != nil {
 			if err := compile(ctx); err != nil {
 				return err
@@ -574,6 +602,11 @@ func walkSnapshot(
 	return nil
 }
 
+func isTestdataPath(p string) bool {
+	return strings.Contains(p, "/testdata/") ||
+		strings.Contains(p, "\\testdata\\")
+}
+
 // DevNull returns the platform-appropriate null device path.
 func DevNull(os string) string {
 	if os == "windows" {
@@ -611,6 +644,9 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 		if err != nil {
 			return fmt.Errorf("load packages in %s: %w", mod, err)
 		}
+		if len(pkgs) == 0 {
+			continue
+		}
 		graph, err := gochecker.Analyze(
 			[]*analysis.Analyzer{
 				checker.NewAnalyzer(Analyzers()...),
@@ -620,9 +656,18 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 		if err != nil {
 			return fmt.Errorf("run analyzers in %s: %w", mod, err)
 		}
+		fset := pkgs[0].Fset
 		var buf bytes.Buffer
-		if err := graph.PrintText(&buf, 0); err != nil {
-			return fmt.Errorf("print diagnostics: %w", err)
+		for act := range graph.All() {
+			for _, d := range act.Diagnostics {
+				pos := fset.Position(d.Pos)
+				if pos.IsValid() &&
+					isTestdataPath(pos.Filename) {
+					continue
+				}
+				fmt.Fprintf(&buf, "%s: %s\n",
+					pos, d.Message)
+			}
 		}
 		if buf.Len() > 0 {
 			return fmt.Errorf(
@@ -686,6 +731,11 @@ func applyFixes(
 
 	for act := range graph.All() {
 		for _, d := range act.Diagnostics {
+			dpos := fset.Position(d.Pos)
+			if dpos.IsValid() &&
+				isTestdataPath(dpos.Filename) {
+				continue
+			}
 			for _, fix := range d.SuggestedFixes {
 				for _, te := range fix.TextEdits {
 					pos := fset.Position(te.Pos)
