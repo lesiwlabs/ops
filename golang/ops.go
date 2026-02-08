@@ -91,14 +91,22 @@ func (o Ops) vet(ctx context.Context) error {
 		return err
 	}
 
-	// goimports (runs on all files from root)
+	// goimports (all Go files, excluding testdata)
 	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	err = Build.Exec(ctx, "goimports",
-		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
+	files, err := goFiles(ctx, ".")
 	if err != nil {
-		return fmt.Errorf("goimports: %w", err)
+		return fmt.Errorf("find go files: %w", err)
+	}
+	if len(files) > 0 {
+		args := append(
+			[]string{"goimports", "-w",
+				"-local", "lesiw.io,labs.lesiw.io"},
+			files...)
+		if err = Build.Exec(ctx, args...); err != nil {
+			return fmt.Errorf("goimports: %w", err)
+		}
 	}
 	if err = diffCheck(ctx, "goimports"); err != nil {
 		return err
@@ -168,14 +176,22 @@ func (o Ops) fix(ctx context.Context) error {
 		}
 	}
 
-	// goimports (runs on all files from root)
+	// goimports (all Go files, excluding testdata)
 	if err = installGoimports(ctx); err != nil {
 		return err
 	}
-	err = Build.Exec(ctx, "goimports",
-		"-w", "-local", "lesiw.io,labs.lesiw.io", ".")
+	files, err := goFiles(ctx, ".")
 	if err != nil {
-		return fmt.Errorf("goimports: %w", err)
+		return fmt.Errorf("find go files: %w", err)
+	}
+	if len(files) > 0 {
+		args := append(
+			[]string{"goimports", "-w",
+				"-local", "lesiw.io,labs.lesiw.io"},
+			files...)
+		if err = Build.Exec(ctx, args...); err != nil {
+			return fmt.Errorf("goimports: %w", err)
+		}
 	}
 
 	// go fix (all modules)
@@ -621,6 +637,34 @@ func DevNull(os string) string {
 		return "NUL"
 	}
 	return "/dev/null"
+}
+
+func goFiles(ctx context.Context, dir string) ([]string, error) {
+	var files []string
+	for entry, err := range Build.ReadDir(ctx, dir) {
+		if err != nil {
+			return nil, fmt.Errorf(
+				"read directory %s: %w", dir, err)
+		}
+		name := entry.Name()
+		if name == ".git" || name == "vendor" ||
+			name == "testdata" {
+			continue
+		}
+		p := path.Join(dir, name)
+		if entry.IsDir() {
+			sub, err := goFiles(ctx, p)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, sub...)
+			continue
+		}
+		if strings.HasSuffix(name, ".go") {
+			files = append(files, p)
+		}
+	}
+	return files, nil
 }
 
 func installGoimports(ctx context.Context) error {
