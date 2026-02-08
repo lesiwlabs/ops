@@ -702,7 +702,8 @@ func goFiles(ctx context.Context, dir string) ([]string, error) {
 }
 
 func hasPackages(ctx context.Context, mod string) bool {
-	return Build.Do(ctx, "go", "-C", mod, "list", "./...") == nil
+	out, err := Build.Read(ctx, "go", "-C", mod, "list", "./...")
+	return err == nil && out != ""
 }
 
 func installMingo(ctx context.Context) error {

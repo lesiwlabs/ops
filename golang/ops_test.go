@@ -40,6 +40,8 @@ func setupMock(t *testing.T, programs ...string) *mock.Machine {
 
 func TestTest(t *testing.T) {
 	m := setupMock(t, "go", "git")
+	m.Return(buffer("test\n"),
+		"go", "-C", ".", "list", "./...")
 
 	err := Ops{}.Test()
 	if err != nil {
