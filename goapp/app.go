@@ -85,6 +85,9 @@ func (op Ops) Build() error {
 			return err
 		}
 	}
+	if golang.Build.Unshell() == golang.Local.Unshell() {
+		return nil
+	}
 	builderOut, err := golang.Build.Open(ctx, "out/")
 	if err != nil {
 		return err
