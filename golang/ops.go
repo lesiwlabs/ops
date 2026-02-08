@@ -685,21 +685,6 @@ func isTestdataPath(p string) bool {
 		p == "testdata"
 }
 
-func isTestFile(pos string) bool {
-	// pos is "file:line:col" or "file:line"
-	file, _, _ := strings.Cut(pos, ":")
-	return strings.HasSuffix(file, "_test.go")
-}
-
-func isTestdataError(pos string) bool {
-	file, _, _ := strings.Cut(pos, ":")
-	return isTestdataPath(file)
-}
-
-func isVersionError(msg string) bool {
-	return strings.Contains(msg, "requires go1.")
-}
-
 // DevNull returns the platform-appropriate null device path.
 func DevNull(os string) string {
 	if os == "windows" {
@@ -900,25 +885,6 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 		if len(pkgs) == 0 {
 			continue
 		}
-		// Check for type errors from package loading.
-		// Filter version-related errors from test files:
-		// mingo sets the go directive based on non-test
-		// source, so tests may use newer Go features.
-		var buf bytes.Buffer
-		for _, pkg := range pkgs {
-			for _, e := range pkg.Errors {
-				pos := e.Pos
-				if isTestFile(pos) &&
-					isVersionError(e.Msg) {
-					continue
-				}
-				if isTestdataError(pos) {
-					continue
-				}
-				fmt.Fprintf(&buf, "%s: %s\n",
-					pos, e.Msg)
-			}
-		}
 		graph, err := gochecker.Analyze(
 			[]*analysis.Analyzer{
 				checker.NewAnalyzer(Analyzers()...),
@@ -929,6 +895,7 @@ func runAnalyzers(ctx context.Context, mods []string) error {
 			return fmt.Errorf("run analyzers in %s: %w", mod, err)
 		}
 		fset := pkgs[0].Fset
+		var buf bytes.Buffer
 		for act := range graph.All() {
 			for _, d := range act.Diagnostics {
 				pos := fset.Position(d.Pos)
