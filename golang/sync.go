@@ -13,8 +13,8 @@ import (
 //go:embed .*
 var f embed.FS
 
-func (Ops) Sync() error {
-	ctx := command.WithEnv(context.Background(),
+func (Ops) Sync(ctx context.Context) error {
+	ctx = command.WithEnv(ctx,
 		map[string]string{"PWD": ".ops"})
 	sh := command.Shell(sys.Machine(), "go")
 	err := sh.Exec(ctx, "go", "get", "-u", "all")

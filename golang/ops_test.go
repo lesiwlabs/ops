@@ -43,7 +43,7 @@ func TestTest(t *testing.T) {
 	m.Return(buffer("test\n"),
 		"go", "-C", ".", "list", "./...")
 
-	err := Ops{}.Test()
+	err := Ops{}.Test(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestTest(t *testing.T) {
 func TestLint(t *testing.T) {
 	setupMock(t, "go", "git")
 
-	err := Ops{}.Lint()
+	err := Ops{}.Lint(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestLint(t *testing.T) {
 func TestCov(t *testing.T) {
 	m := setupMock(t, "go", "git")
 
-	err := Ops{}.Cov()
+	err := Ops{}.Cov(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestPromoteSuccess(t *testing.T) {
 		"--json", "conclusion",
 		"--jq", ".[0].conclusion")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err != nil {
 		t.Fatalf("Promote() failed: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestPromoteCIFailed(t *testing.T) {
 		"--json", "conclusion",
 		"--jq", ".[0].conclusion")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err == nil {
 		t.Fatal("Promote() should fail when CI has not passed")
 	}
@@ -209,7 +209,7 @@ func TestPromoteCIStale(t *testing.T) {
 		"--branch", "next", "--limit", "1",
 		"--json", "headSha", "--jq", ".[0].headSha")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err == nil {
 		t.Fatal("Promote() should fail when CI ran on wrong commit")
 	}
@@ -223,7 +223,7 @@ func TestPromoteWrongBranch(t *testing.T) {
 	m.Return(buffer("main"),
 		"git", "branch", "--show-current")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err == nil {
 		t.Fatal("Promote() should fail when not on next branch")
 	}
@@ -242,7 +242,7 @@ func TestPromoteMainDiverged(t *testing.T) {
 		"git", "merge-base", "--is-ancestor",
 		"origin/main", "next")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err == nil {
 		t.Fatal("Promote() should fail when main has diverged")
 	}
@@ -262,7 +262,7 @@ func TestPromoteAlreadyEqual(t *testing.T) {
 	m.Return(buffer("abc123"),
 		"git", "rev-parse", "next")
 
-	err := Ops{}.Promote()
+	err := Ops{}.Promote(context.Background())
 	if err == nil {
 		t.Fatal("Promote() should fail when next and main are equal")
 	}

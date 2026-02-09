@@ -95,9 +95,7 @@ var (
 
 var GoModReplaceAllowed bool
 
-func (o Ops) Vet() error { return o.vet(context.Background()) }
-
-func (o Ops) vet(ctx context.Context) error {
+func (o Ops) Vet(ctx context.Context) error {
 	// Take initial snapshot if not already set (e.g. direct Vet() call).
 	if snapshotFromContext(ctx) == nil {
 		snap, err := takeSnapshot(ctx)
@@ -178,9 +176,7 @@ func (o Ops) vet(ctx context.Context) error {
 	return nil
 }
 
-func (o Ops) Test() error { return o.test(context.Background()) }
-
-func (Ops) test(ctx context.Context) error {
+func (Ops) Test(ctx context.Context) error {
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -188,9 +184,7 @@ func (Ops) test(ctx context.Context) error {
 	return runTests(ctx, mods, false)
 }
 
-func (o Ops) Fix() error { return o.fix(context.Background()) }
-
-func (o Ops) fix(ctx context.Context) error {
+func (o Ops) Fix(ctx context.Context) error {
 	mods, err := modules(ctx)
 	if err != nil {
 		return fmt.Errorf("find modules: %w", err)
@@ -260,16 +254,14 @@ func (o Ops) fix(ctx context.Context) error {
 	return nil
 }
 
-func (Ops) Lint() error {
-	ctx := context.Background()
+func (Ops) Lint(ctx context.Context) error {
 	if !GoModReplaceAllowed {
 		return checkGoModReplace(ctx, Build)
 	}
 	return nil
 }
 
-func (Ops) Cov() error {
-	ctx := context.Background()
+func (Ops) Cov(ctx context.Context) error {
 	tmpDir, err := Build.Temp(ctx, "gocover/")
 	if err != nil {
 		return err
@@ -295,9 +287,7 @@ func (Ops) Cov() error {
 
 // Promote fast-forwards main to next after CI passes.
 // Requires being on the next branch with all changes pushed.
-func (Ops) Promote() error {
-	ctx := context.Background()
-
+func (Ops) Promote(ctx context.Context) error {
 	branch, err := Local.Read(ctx,
 		"git", "branch", "--show-current")
 	if err != nil {
@@ -387,10 +377,13 @@ func (Ops) Promote() error {
 // Check runs vet, compile, and test in a clean tree.
 // The compile parameter is called between vet and test.
 // Pass nil to skip compilation.
-func Check(compile func(context.Context) error) error {
-	return InCleanTree(func(ctx context.Context) error {
+func Check(
+	ctx context.Context,
+	compile func(context.Context) error,
+) error {
+	return InCleanTree(ctx, func(ctx context.Context) error {
 		o := Ops{}
-		if err := o.vet(ctx); err != nil {
+		if err := o.Vet(ctx); err != nil {
 			return err
 		}
 
@@ -416,7 +409,7 @@ func Check(compile func(context.Context) error) error {
 				return err
 			}
 		}
-		return o.test(ctx)
+		return o.Test(ctx)
 	})
 }
 
@@ -428,8 +421,9 @@ func Check(compile func(context.Context) error) error {
 // assumed to be clean and checks run in place.
 var InCleanTree = inCleanTree
 
-func inCleanTree(fn func(context.Context) error) error {
-	ctx := context.Background()
+func inCleanTree(
+	ctx context.Context, fn func(context.Context) error,
+) error {
 	ctx = command.WithEnv(ctx, map[string]string{
 		"GOWORK": "off",
 	})

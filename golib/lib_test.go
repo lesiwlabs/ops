@@ -35,14 +35,14 @@ func TestCheckRunsOnce(t *testing.T) {
 	swap(t, &golang.Build, sh)
 	swap(t, &golang.Local, sh)
 	swap(t, &golang.InCleanTree,
-		func(fn func(context.Context) error) error {
-			return fn(context.Background())
+		func(ctx context.Context, fn func(context.Context) error) error {
+			return fn(ctx)
 		})
 	swap(t, &checkOnce, sync.Once{})
 	swap(t, &errCheck, error(nil))
 
 	for range 3 {
-		err = Ops{}.Check()
+		err = Ops{}.Check(context.Background())
 		if err != nil {
 			t.Fatal(err)
 		}

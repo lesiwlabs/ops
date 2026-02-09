@@ -33,13 +33,11 @@ type Ops struct{ golang.Ops }
 var Name string
 var Versionfile = "version.txt"
 
-func (op Ops) Check() error {
-	return golang.Check(op.compile)
+func (op Ops) Check(ctx context.Context) error {
+	return golang.Check(ctx, op.Compile)
 }
 
-func (o Ops) Compile() error { return o.compile(context.Background()) }
-
-func (Ops) compile(ctx context.Context) error {
+func (Ops) Compile(ctx context.Context) error {
 	for _, t := range Targets {
 		ctx := command.WithEnv(ctx, map[string]string{
 			"CGO_ENABLED": "0",
@@ -58,20 +56,19 @@ func (Ops) compile(ctx context.Context) error {
 	return nil
 }
 
-func (op Ops) Build() error {
+func (op Ops) Build(ctx context.Context) error {
 	if Name == "" {
 		return fmt.Errorf("no app name given")
 	}
-	if err := op.Clean(); err != nil {
+	if err := op.Clean(ctx); err != nil {
 		return err
 	}
-	if err := op.Lint(); err != nil {
+	if err := op.Lint(ctx); err != nil {
 		return err
 	}
-	if err := op.Test(); err != nil {
+	if err := op.Test(ctx); err != nil {
 		return err
 	}
-	ctx := context.Background()
 	for _, t := range Targets {
 		ctx := command.WithEnv(ctx, map[string]string{
 			"CGO_ENABLED": "0",
@@ -104,16 +101,14 @@ func (op Ops) Build() error {
 	return nil
 }
 
-func (Ops) Clean() error {
-	ctx := context.Background()
+func (Ops) Clean(ctx context.Context) error {
 	if err := golang.Local.RemoveAll(ctx, "out"); err != nil {
 		return err
 	}
 	return golang.Local.MkdirAll(ctx, "out")
 }
 
-func (Ops) Bump() error {
-	ctx := context.Background()
+func (Ops) Bump(ctx context.Context) error {
 	_, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
 		err = golang.Build.Exec(ctx,

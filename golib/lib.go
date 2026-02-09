@@ -37,20 +37,18 @@ type Ops struct{ golang.Ops }
 var checkOnce sync.Once
 var errCheck error
 
-func (op Ops) Check() error {
+func (op Ops) Check(ctx context.Context) error {
 	checkOnce.Do(func() {
-		errCheck = golang.Check(op.compile)
+		errCheck = golang.Check(ctx, op.Compile)
 	})
 	return errCheck
 }
 
-func (op Ops) Build() error {
-	return op.Check()
+func (op Ops) Build(ctx context.Context) error {
+	return op.Check(ctx)
 }
 
-func (o Ops) Compile() error { return o.compile(context.Background()) }
-
-func (Ops) compile(ctx context.Context) error {
+func (Ops) Compile(ctx context.Context) error {
 	for _, t := range Targets {
 		ctx := command.WithEnv(ctx, map[string]string{
 			"CGO_ENABLED": "0",
@@ -69,11 +67,10 @@ func (Ops) compile(ctx context.Context) error {
 	return nil
 }
 
-func (op Ops) Bump() error {
-	if err := op.Check(); err != nil {
+func (op Ops) Bump(ctx context.Context) error {
+	if err := op.Check(ctx); err != nil {
 		return err
 	}
-	ctx := context.Background()
 	_, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
 		err = golang.Build.Exec(ctx,
@@ -110,8 +107,7 @@ func (op Ops) Bump() error {
 	return golang.Local.Exec(ctx, "git", "push", "--tags")
 }
 
-func (Ops) ProxyPing() error {
-	ctx := context.Background()
+func (Ops) ProxyPing(ctx context.Context) error {
 	var ref string
 	tag, err := golang.Local.Read(ctx,
 		"git", "describe", "--exact-match", "--tags")

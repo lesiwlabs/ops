@@ -93,15 +93,14 @@ type Ops struct {
 	EnvSecrets map[string]string // Map of spkez secrets, exposed as env vars.
 }
 
-func (op Ops) Deploy() error {
+func (op Ops) Deploy(ctx context.Context) error {
 	goapp.Targets = []goapp.Target{{
 		Goos: "linux", Goarch: "arm",
 		Unames: "linux", Unamer: "aarch64",
 	}}
-	if err := op.Build(); err != nil {
+	if err := op.Build(ctx); err != nil {
 		return fmt.Errorf("could not build app: %w", err)
 	}
-	ctx := context.Background()
 	sh := command.Shell(sys.Machine())
 	err := sh.Rename(ctx,
 		"out/"+goapp.Name+"-linux-aarch64", "out/app")
@@ -112,24 +111,23 @@ func (op Ops) Deploy() error {
 	if err != nil {
 		return fmt.Errorf("could not create container: %w", err)
 	}
-	if err := op.deployImage(img); err != nil {
+	if err := op.deployImage(ctx, img); err != nil {
 		return fmt.Errorf("could not create helm chart: %w", err)
 	}
 	return nil
 }
 
-func (op Ops) Destroy() error {
-	return op.destroy(false)
+func (op Ops) Destroy(ctx context.Context) error {
+	return op.destroy(ctx, false)
 }
 
-func (op Ops) ForceDestroy() error {
-	return op.destroy(true)
+func (op Ops) ForceDestroy(ctx context.Context) error {
+	return op.destroy(ctx, true)
 }
 
-func (op Ops) destroy(force bool) error {
-	ctx := context.Background()
+func (op Ops) destroy(ctx context.Context, force bool) error {
 	if !force {
-		if err := op.Backup(); err != nil {
+		if err := op.Backup(ctx); err != nil {
 			return fmt.Errorf("could not backup the application: %w", err)
 		}
 	}
@@ -158,12 +156,12 @@ func (op Ops) destroy(force bool) error {
 	return nil
 }
 
-func (Ops) Backup() error {
+func (Ops) Backup(_ context.Context) error {
 	// TODO: Back up the application data.
 	return nil
 }
 
-func (Ops) Restore() error {
+func (Ops) Restore(_ context.Context) error {
 	// TODO: Restore the application data from backup.
 	return nil
 }
@@ -390,8 +388,7 @@ spec:
             pathType: Prefix
 `
 
-func (op Ops) deployImage(img string) error {
-	ctx := context.Background()
+func (op Ops) deployImage(ctx context.Context, img string) error {
 	helm, err := getHelm()
 	if err != nil {
 		return err
@@ -408,7 +405,7 @@ func (op Ops) deployImage(img string) error {
 	if err != nil {
 		return fmt.Errorf("could not create Chart.yaml: %w", err)
 	}
-	ctrspec, err := op.k8sCtrSpec()
+	ctrspec, err := op.k8sCtrSpec(ctx)
 	if err != nil {
 		return fmt.Errorf("could not create environment block: %w", err)
 	}
@@ -427,7 +424,7 @@ func (op Ops) deployImage(img string) error {
 		w.Printf(serviceChart, goapp.Name, op.Port)
 	}
 	if op.Postgres {
-		if err := createPostgresRole(goapp.Name); err != nil {
+		if err := createPostgresRole(ctx, goapp.Name); err != nil {
 			return fmt.Errorf("failed to create postgres role: %w", err)
 		}
 		w.Printf(databaseChart, goapp.Name, goapp.Name)
@@ -462,8 +459,7 @@ func (op Ops) deployImage(img string) error {
 	return nil
 }
 
-func (op Ops) k8sCtrSpec() (string, error) {
-	ctx := context.Background()
+func (op Ops) k8sCtrSpec(ctx context.Context) (string, error) {
 	var spec strings.Builder
 
 	var env strings.Builder
@@ -485,7 +481,7 @@ func (op Ops) k8sCtrSpec() (string, error) {
 		}
 		name := regexp.MustCompile(`[^a-zA-Z0-9]+`).
 			ReplaceAllString(v, ".")
-		if err := op.writeSecret(name, r); err != nil {
+		if err := op.writeSecret(ctx, name, r); err != nil {
 			return "", fmt.Errorf("could not store secret %q: %w", v, err)
 		}
 		env.WriteString(fmt.Sprintf("            - name: %s\n"+
@@ -501,8 +497,7 @@ func (op Ops) k8sCtrSpec() (string, error) {
 	return spec.String(), nil
 }
 
-func (op Ops) writeSecret(k, v string) error {
-	ctx := context.Background()
+func (op Ops) writeSecret(ctx context.Context, k, v string) error {
 	kubectl, err := getKubectl()
 	if err != nil {
 		return err
@@ -525,8 +520,7 @@ type: Opaque
 stringData:
   %s: %s`
 
-func createPostgresRole(name string) error {
-	ctx := context.Background()
+func createPostgresRole(ctx context.Context, name string) error {
 	kubectl, err := getKubectl()
 	if err != nil {
 		return err

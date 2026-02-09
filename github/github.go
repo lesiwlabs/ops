@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"lesiw.io/command"
@@ -14,11 +15,10 @@ var Shell = command.Shell(sys.Machine(), "spkez", "gh")
 var Repo string
 var Secrets map[string]string
 
-func (Ops) Secrets() {
+func (Ops) Secrets(ctx context.Context) error {
 	if Repo == "" {
-		panic("github repo not set")
+		return fmt.Errorf("github repo not set")
 	}
-	ctx := context.Background()
 	for k, v := range Secrets {
 		_, err := io.Copy(
 			command.NewWriter(ctx, Shell,
@@ -26,7 +26,8 @@ func (Ops) Secrets() {
 			command.NewReader(ctx, Shell, "spkez", "get", v),
 		)
 		if err != nil {
-			panic(err)
+			return err
 		}
 	}
+	return nil
 }

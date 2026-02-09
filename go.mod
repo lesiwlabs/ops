@@ -13,7 +13,7 @@ require (
 	lesiw.io/errcheck v1.0.0
 	lesiw.io/fs v0.6.0
 	lesiw.io/linelen v0.2.0
-	lesiw.io/ops v0.14.0
+	lesiw.io/ops v0.15.0
 	lesiw.io/plscheck v0.21.0
 	lesiw.io/tidytypes v0.2.0
 )
