@@ -62,6 +62,7 @@ import (
 
 	"lesiw.io/checker"
 	"lesiw.io/command"
+	"lesiw.io/command/sub"
 	"lesiw.io/command/sys"
 	"lesiw.io/errcheck/errcheck"
 	"lesiw.io/fs"
@@ -93,6 +94,15 @@ var (
 	Build = command.Shell(sys.Machine(), "go")
 )
 
+var (
+	mingo = sub.Machine(sys.Machine(), "go", "run",
+		"github.com/bobg/mingo/cmd/mingo@v0.14.4")
+	goimports = sub.Machine(sys.Machine(), "go", "run",
+		"golang.org/x/tools/cmd/goimports@v0.39.0")
+	goreadme = sub.Machine(sys.Machine(), "go", "run",
+		"github.com/posener/goreadme/cmd/goreadme@v1.4.2")
+)
+
 var GoModReplaceAllowed bool
 
 func (o Ops) Vet(ctx context.Context) error {
@@ -121,19 +131,17 @@ func (o Ops) Vet(ctx context.Context) error {
 	}
 
 	// goimports (all Go files, excluding testdata)
-	if err = installGoimports(ctx); err != nil {
-		return err
-	}
 	files, err := goFiles(ctx, ".")
 	if err != nil {
 		return fmt.Errorf("find go files: %w", err)
 	}
 	if len(files) > 0 {
 		args := append(
-			[]string{"goimports", "-w",
+			[]string{"-w",
 				"-local", "lesiw.io,labs.lesiw.io"},
 			files...)
-		if err = Build.Exec(ctx, args...); err != nil {
+		if err = command.Exec(
+			ctx, goimports, args...); err != nil {
 			return fmt.Errorf("goimports: %w", err)
 		}
 	}
@@ -199,19 +207,17 @@ func (o Ops) Fix(ctx context.Context) error {
 	}
 
 	// goimports (all Go files, excluding testdata)
-	if err = installGoimports(ctx); err != nil {
-		return err
-	}
 	files, err := goFiles(ctx, ".")
 	if err != nil {
 		return fmt.Errorf("find go files: %w", err)
 	}
 	if len(files) > 0 {
 		args := append(
-			[]string{"goimports", "-w",
+			[]string{"-w",
 				"-local", "lesiw.io,labs.lesiw.io"},
 			files...)
-		if err = Build.Exec(ctx, args...); err != nil {
+		if err = command.Exec(
+			ctx, goimports, args...); err != nil {
 			return fmt.Errorf("goimports: %w", err)
 		}
 	}
@@ -747,37 +753,14 @@ func hasPackages(ctx context.Context, mod string) bool {
 	return err == nil && out != ""
 }
 
-func installMingo(ctx context.Context) error {
-	err := command.Do(
-		ctx, Build.Unshell(), "mingo", "--help",
-	)
-	if command.NotFound(err) {
-		ctx := command.WithEnv(ctx, map[string]string{
-			"GOTOOLCHAIN": "local",
-		})
-		err = Build.Exec(ctx,
-			"go", "install",
-			"github.com/bobg/mingo/cmd/mingo@latest",
-		)
-		if err != nil {
-			return err
-		}
-	}
-	Build.Handle("mingo", Build.Unshell())
-	return nil
-}
-
 func mingoCheck(ctx context.Context, mods []string) error {
 	// https://github.com/bobg/mingo/issues/17
 	if Build.OS(ctx) == "windows" {
 		return nil
 	}
-	if err := installMingo(ctx); err != nil {
-		return err
-	}
 	for _, mod := range mods {
-		err := Build.Exec(ctx,
-			"mingo", "-check", "-strict", mod,
+		err := command.Exec(ctx, mingo,
+			"-check", "-strict", mod,
 		)
 		if err == nil {
 			continue
@@ -786,8 +769,8 @@ func mingoCheck(ctx context.Context, mods []string) error {
 		// directives that prevent dependency scanning.
 		// Drop -strict: dependencies may force a higher
 		// go directive than the source code minimum.
-		err = Build.Exec(ctx,
-			"mingo", "-check",
+		err = command.Exec(ctx, mingo,
+			"-check",
 			"-deps", "none", mod,
 		)
 		if err != nil {
@@ -804,16 +787,13 @@ func mingoFix(ctx context.Context, mods []string) error {
 	if Build.OS(ctx) == "windows" {
 		return nil
 	}
-	if err := installMingo(ctx); err != nil {
-		return err
-	}
 	for _, mod := range mods {
-		ver, err := Build.Read(ctx, "mingo", mod)
+		ver, err := command.Read(ctx, mingo, mod)
 		if err != nil {
 			// Retry without deps for modules with
 			// replace directives.
-			ver, err = Build.Read(ctx,
-				"mingo", "-deps", "none", mod,
+			ver, err = command.Read(ctx,
+				mingo, "-deps", "none", mod,
 			)
 		}
 		if err != nil {
@@ -839,26 +819,6 @@ func gitIgnored(ctx context.Context, p string) bool {
 		return false
 	}
 	return Local.Do(ctx, "git", "check-ignore", "-q", p) == nil
-}
-
-func installGoimports(ctx context.Context) error {
-	err := command.Do(
-		ctx, Build.Unshell(), "goimports", "--help",
-	)
-	if command.NotFound(err) {
-		ctx := command.WithEnv(ctx, map[string]string{
-			"GOTOOLCHAIN": "local",
-		})
-		err = Build.Exec(ctx,
-			"go", "install",
-			"golang.org/x/tools/cmd/goimports@latest",
-		)
-		if err != nil {
-			return err
-		}
-	}
-	Build.Handle("goimports", Build.Unshell())
-	return nil
 }
 
 func runAnalyzers(ctx context.Context, mods []string) error {

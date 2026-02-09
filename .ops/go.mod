@@ -6,7 +6,7 @@ replace labs.lesiw.io/ops => ..
 
 require (
 	labs.lesiw.io/ops v0.0.0-20250610221534-a6eb6230605f
-	lesiw.io/ops v0.14.0
+	lesiw.io/ops v0.15.0
 )
 
 require (
