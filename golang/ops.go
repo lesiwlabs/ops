@@ -145,7 +145,7 @@ var CheckTargets = []Target{
 	{Goos: "plan9", Goarch: "amd64"},
 }
 
-func (o Ops) Vet(ctx context.Context) error {
+func (Ops) Vet(ctx context.Context) error {
 	// Take initial snapshot if not already set (e.g. direct Vet() call).
 	if snapshotFromContext(ctx) == nil {
 		snap, err := takeSnapshot(ctx)
@@ -154,74 +154,7 @@ func (o Ops) Vet(ctx context.Context) error {
 		}
 		ctx = withSnapshot(ctx, snap)
 	}
-	mods, err := modules(ctx)
-	if err != nil {
-		return fmt.Errorf("find modules: %w", err)
-	}
-
-	// go mod tidy (all modules)
-	for _, mod := range mods {
-		err = Build.Exec(ctx, "go", "-C", mod, "mod", "tidy")
-		if err != nil {
-			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
-		}
-	}
-	if err = diffCheck(ctx, "go mod tidy"); err != nil {
-		return err
-	}
-
-	// goimports (all Go files, excluding testdata)
-	files, err := goFiles(ctx, ".")
-	if err != nil {
-		return fmt.Errorf("find go files: %w", err)
-	}
-	if len(files) > 0 {
-		args := append(
-			[]string{"-w",
-				"-local", "lesiw.io,labs.lesiw.io"},
-			files...)
-		if err = command.Exec(
-			ctx, goimports, args...); err != nil {
-			return fmt.Errorf("goimports: %w", err)
-		}
-	}
-	if err = diffCheck(ctx, "goimports"); err != nil {
-		return err
-	}
-
-	// go fix (all modules)
-	for _, mod := range mods {
-		err = Build.Exec(ctx, "go", "-C", mod, "fix", "./...")
-		if err != nil {
-			return fmt.Errorf("go fix in %s: %w", mod, err)
-		}
-	}
-	if err = diffCheck(ctx, "go fix"); err != nil {
-		return err
-	}
-
-	// go.mod replace check (already recursive)
-	if !GoModReplaceAllowed {
-		if err := checkGoModReplace(ctx, Build); err != nil {
-			return err
-		}
-	}
-
-	// analyzers (all modules)
-	if err := runAnalyzers(ctx, mods); err != nil {
-		return err
-	}
-
-	// mingo version check (all modules)
-	if err := mingoCheck(ctx, mods); err != nil {
-		return err
-	}
-
-	// short tests (all modules, twice: without and with race detector)
-	if err := runTests(ctx, mods, true); err != nil {
-		return err
-	}
-	return nil
+	return check(ctx, true)
 }
 
 func (Ops) Test(ctx context.Context) error {
@@ -423,47 +356,109 @@ func (Ops) Promote(ctx context.Context) error {
 // Check runs vet, compile, and test in a clean tree.
 func (Ops) Check(ctx context.Context) error {
 	return InCleanTree(ctx, func(ctx context.Context) error {
-		o := Ops{}
-		if err := o.Vet(ctx); err != nil {
-			return err
-		}
-
-		// go generate (all modules)
-		mods, err := modules(ctx)
-		if err != nil {
-			return fmt.Errorf("find modules: %w", err)
-		}
-		for _, mod := range mods {
-			err = Build.Exec(ctx,
-				"go", "-C", mod, "generate", "./...")
-			if err != nil {
-				return fmt.Errorf(
-					"go generate in %s: %w", mod, err)
-			}
-		}
-		if err = diffCheck(ctx, "go generate"); err != nil {
-			return err
-		}
-
-		// compile for all check targets
-		for _, t := range CheckTargets {
-			ctx := command.WithEnv(ctx,
-				map[string]string{
-					"CGO_ENABLED": "0",
-					"GOOS":        t.Goos,
-					"GOARCH":      t.Goarch,
-				})
-			err := Build.Exec(ctx,
-				"go", "build",
-				"-o", DevNull(Build.OS(ctx)),
-				"./...",
-			)
-			if err != nil {
-				return err
-			}
-		}
-		return o.Test(ctx)
+		return check(ctx, false)
 	})
+}
+
+func check(ctx context.Context, short bool) error {
+	mods, err := modules(ctx)
+	if err != nil {
+		return fmt.Errorf("find modules: %w", err)
+	}
+
+	// go mod tidy (all modules)
+	for _, mod := range mods {
+		err = Build.Exec(ctx, "go", "-C", mod, "mod", "tidy")
+		if err != nil {
+			return fmt.Errorf("go mod tidy in %s: %w", mod, err)
+		}
+	}
+	if err = diffCheck(ctx, "go mod tidy"); err != nil {
+		return err
+	}
+
+	// goimports (all Go files, excluding testdata)
+	files, err := goFiles(ctx, ".")
+	if err != nil {
+		return fmt.Errorf("find go files: %w", err)
+	}
+	if len(files) > 0 {
+		args := append(
+			[]string{"-w",
+				"-local", "lesiw.io,labs.lesiw.io"},
+			files...)
+		if err = command.Exec(
+			ctx, goimports, args...); err != nil {
+			return fmt.Errorf("goimports: %w", err)
+		}
+	}
+	if err = diffCheck(ctx, "goimports"); err != nil {
+		return err
+	}
+
+	// go fix (all modules)
+	for _, mod := range mods {
+		err = Build.Exec(ctx, "go", "-C", mod, "fix", "./...")
+		if err != nil {
+			return fmt.Errorf("go fix in %s: %w", mod, err)
+		}
+	}
+	if err = diffCheck(ctx, "go fix"); err != nil {
+		return err
+	}
+
+	// go.mod replace check (already recursive)
+	if !GoModReplaceAllowed {
+		if err := checkGoModReplace(ctx, Build); err != nil {
+			return err
+		}
+	}
+
+	// analyzers (all modules)
+	if err := runAnalyzers(ctx, mods); err != nil {
+		return err
+	}
+
+	// mingo version check (all modules)
+	if err := mingoCheck(ctx, mods); err != nil {
+		return err
+	}
+
+	if short {
+		return runTests(ctx, mods, true)
+	}
+
+	// go generate (all modules)
+	for _, mod := range mods {
+		err = Build.Exec(ctx,
+			"go", "-C", mod, "generate", "./...")
+		if err != nil {
+			return fmt.Errorf(
+				"go generate in %s: %w", mod, err)
+		}
+	}
+	if err = diffCheck(ctx, "go generate"); err != nil {
+		return err
+	}
+
+	// compile for all check targets
+	for _, t := range CheckTargets {
+		ctx := command.WithEnv(ctx,
+			map[string]string{
+				"CGO_ENABLED": "0",
+				"GOOS":        t.Goos,
+				"GOARCH":      t.Goarch,
+			})
+		err := Build.Exec(ctx,
+			"go", "build",
+			"-o", DevNull(Build.OS(ctx)),
+			"./...",
+		)
+		if err != nil {
+			return err
+		}
+	}
+	return runTests(ctx, mods, false)
 }
 
 // InCleanTree extracts the committed git tree into a
