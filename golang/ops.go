@@ -138,7 +138,6 @@ var CheckTargets = []Target{
 	{Goos: "darwin", Goarch: "amd64"},
 	{Goos: "darwin", Goarch: "arm64"},
 	{Goos: "windows", Goarch: "386"},
-	{Goos: "windows", Goarch: "arm"},
 	{Goos: "windows", Goarch: "amd64"},
 	{Goos: "plan9", Goarch: "386"},
 	{Goos: "plan9", Goarch: "arm"},
