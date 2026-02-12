@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"labs.lesiw.io/ops/goapp"
+	"labs.lesiw.io/ops/golang"
 	"lesiw.io/command"
 	"lesiw.io/command/ctr"
 	"lesiw.io/command/sub"
@@ -94,10 +95,9 @@ type Ops struct {
 }
 
 func (op Ops) Deploy(ctx context.Context) error {
-	goapp.Targets = []goapp.Target{{
-		Goos: "linux", Goarch: "arm",
-		Unames: "linux", Unamer: "aarch64",
-	}}
+	goapp.Targets = []golang.Target{
+		{Goos: "linux", Goarch: "arm64"},
+	}
 	if err := op.Build(ctx); err != nil {
 		return fmt.Errorf("could not build app: %w", err)
 	}

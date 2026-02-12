@@ -105,6 +105,46 @@ var (
 
 var GoModReplaceAllowed bool
 
+type Target struct {
+	Goos   string
+	Goarch string
+}
+
+func (t Target) Unames() string { return t.Goos }
+
+func (t Target) Unamer() string {
+	switch t.Goarch {
+	case "386":
+		return "i386"
+	case "amd64":
+		return "x86_64"
+	case "arm":
+		return "armv7l"
+	case "arm64":
+		if t.Goos == "darwin" {
+			return "arm64"
+		}
+		return "aarch64"
+	default:
+		return t.Goarch
+	}
+}
+
+var CheckTargets = []Target{
+	{Goos: "linux", Goarch: "386"},
+	{Goos: "linux", Goarch: "amd64"},
+	{Goos: "linux", Goarch: "arm"},
+	{Goos: "linux", Goarch: "arm64"},
+	{Goos: "darwin", Goarch: "amd64"},
+	{Goos: "darwin", Goarch: "arm64"},
+	{Goos: "windows", Goarch: "386"},
+	{Goos: "windows", Goarch: "arm"},
+	{Goos: "windows", Goarch: "amd64"},
+	{Goos: "plan9", Goarch: "386"},
+	{Goos: "plan9", Goarch: "arm"},
+	{Goos: "plan9", Goarch: "amd64"},
+}
+
 func (o Ops) Vet(ctx context.Context) error {
 	// Take initial snapshot if not already set (e.g. direct Vet() call).
 	if snapshotFromContext(ctx) == nil {
@@ -381,12 +421,7 @@ func (Ops) Promote(ctx context.Context) error {
 }
 
 // Check runs vet, compile, and test in a clean tree.
-// The compile parameter is called between vet and test.
-// Pass nil to skip compilation.
-func Check(
-	ctx context.Context,
-	compile func(context.Context) error,
-) error {
+func (Ops) Check(ctx context.Context) error {
 	return InCleanTree(ctx, func(ctx context.Context) error {
 		o := Ops{}
 		if err := o.Vet(ctx); err != nil {
@@ -410,8 +445,20 @@ func Check(
 			return err
 		}
 
-		if compile != nil {
-			if err := compile(ctx); err != nil {
+		// compile for all check targets
+		for _, t := range CheckTargets {
+			ctx := command.WithEnv(ctx,
+				map[string]string{
+					"CGO_ENABLED": "0",
+					"GOOS":        t.Goos,
+					"GOARCH":      t.Goarch,
+				})
+			err := Build.Exec(ctx,
+				"go", "build",
+				"-o", DevNull(Build.OS(ctx)),
+				"./...",
+			)
+			if err != nil {
 				return err
 			}
 		}

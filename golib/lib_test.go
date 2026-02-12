@@ -2,7 +2,6 @@ package golib
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"labs.lesiw.io/ops/golang"
@@ -21,7 +20,7 @@ func swap[T any](t *testing.T, ptr *T, val T) {
 	t.Cleanup(func() { *ptr = old })
 }
 
-func TestCheckRunsOnce(t *testing.T) {
+func TestCheckInherited(t *testing.T) {
 	ctx := context.Background()
 	m := new(mock.Machine)
 	m.SetOS("linux")
@@ -38,25 +37,21 @@ func TestCheckRunsOnce(t *testing.T) {
 		func(ctx context.Context, fn func(context.Context) error) error {
 			return fn(ctx)
 		})
-	swap(t, &checkOnce, sync.Once{})
-	swap(t, &errCheck, error(nil))
 
-	for range 3 {
-		err = Ops{}.Check(context.Background())
-		if err != nil {
-			t.Fatal(err)
-		}
+	err = Ops{}.Check(context.Background())
+	if err != nil {
+		t.Fatal(err)
 	}
 
 	got := mock.Calls(m, "go")
-	var testCount int
+	var buildCount int
 	for _, c := range got {
-		if len(c.Args) >= 2 && c.Args[1] == "test" {
-			testCount++
+		if len(c.Args) >= 2 && c.Args[1] == "build" {
+			buildCount++
 		}
 	}
-	if testCount > 10 {
-		t.Errorf("too many test calls (%d), Check should run once",
-			testCount)
+	if buildCount != len(golang.CheckTargets) {
+		t.Errorf("got %d build calls, want %d",
+			buildCount, len(golang.CheckTargets))
 	}
 }

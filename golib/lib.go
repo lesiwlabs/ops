@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"labs.lesiw.io/ops/golang"
 	"lesiw.io/command"
@@ -12,59 +11,10 @@ import (
 	"lesiw.io/fs/path"
 )
 
-type Target struct {
-	Goos   string
-	Goarch string
-}
-
-var Targets = []Target{
-	{"linux", "386"},
-	{"linux", "amd64"},
-	{"linux", "arm"},
-	{"linux", "arm64"},
-	{"darwin", "amd64"},
-	{"darwin", "arm64"},
-	{"windows", "386"},
-	{"windows", "arm"},
-	{"windows", "amd64"},
-	{"plan9", "386"},
-	{"plan9", "arm"},
-	{"plan9", "amd64"},
-}
-
 type Ops struct{ golang.Ops }
-
-var checkOnce sync.Once
-var errCheck error
-
-func (op Ops) Check(ctx context.Context) error {
-	checkOnce.Do(func() {
-		errCheck = golang.Check(ctx, op.Compile)
-	})
-	return errCheck
-}
 
 func (op Ops) Build(ctx context.Context) error {
 	return op.Check(ctx)
-}
-
-func (Ops) Compile(ctx context.Context) error {
-	for _, t := range Targets {
-		ctx := command.WithEnv(ctx, map[string]string{
-			"CGO_ENABLED": "0",
-			"GOOS":        t.Goos,
-			"GOARCH":      t.Goarch,
-		})
-		err := golang.Build.Exec(ctx,
-			"go", "build",
-			"-o", golang.DevNull(golang.Build.OS(ctx)),
-			"./...",
-		)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (op Ops) Bump(ctx context.Context) error {

@@ -12,49 +12,19 @@ import (
 	"lesiw.io/fs/path"
 )
 
-type Target struct {
-	Goos   string
-	Goarch string
-	Unames string
-	Unamer string
-}
-
-var Targets = []Target{
-	{"linux", "386", "linux", "i386"},
-	{"linux", "amd64", "linux", "x86_64"},
-	{"linux", "arm", "linux", "armv7l"},
-	{"linux", "arm64", "linux", "aarch64"},
-	{"darwin", "amd64", "darwin", "x86_64"},
-	{"darwin", "arm64", "darwin", "arm64"},
+var Targets = []golang.Target{
+	{Goos: "linux", Goarch: "386"},
+	{Goos: "linux", Goarch: "amd64"},
+	{Goos: "linux", Goarch: "arm"},
+	{Goos: "linux", Goarch: "arm64"},
+	{Goos: "darwin", Goarch: "amd64"},
+	{Goos: "darwin", Goarch: "arm64"},
 }
 
 type Ops struct{ golang.Ops }
 
 var Name string
 var Versionfile = "version.txt"
-
-func (op Ops) Check(ctx context.Context) error {
-	return golang.Check(ctx, op.Compile)
-}
-
-func (Ops) Compile(ctx context.Context) error {
-	for _, t := range Targets {
-		ctx := command.WithEnv(ctx, map[string]string{
-			"CGO_ENABLED": "0",
-			"GOOS":        t.Goos,
-			"GOARCH":      t.Goarch,
-		})
-		err := golang.Build.Exec(ctx,
-			"go", "build",
-			"-o", golang.DevNull(golang.Build.OS(ctx)),
-			".",
-		)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 
 func (op Ops) Build(ctx context.Context) error {
 	if Name == "" {
@@ -77,7 +47,7 @@ func (op Ops) Build(ctx context.Context) error {
 		})
 		if err := golang.Build.Exec(ctx,
 			"go", "build", "-ldflags=-s -w", "-o",
-			"out/"+Name+"-"+t.Unames+"-"+t.Unamer, ".",
+			"out/"+Name+"-"+t.Unames()+"-"+t.Unamer(), ".",
 		); err != nil {
 			return err
 		}
