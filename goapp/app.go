@@ -78,7 +78,10 @@ func (Ops) Clean(ctx context.Context) error {
 	return golang.Local.MkdirAll(ctx, "out")
 }
 
-func (Ops) Bump(ctx context.Context) error {
+func (op Ops) Bump(ctx context.Context) error {
+	if err := op.Check(ctx); err != nil {
+		return err
+	}
 	_, err := golang.Local.Read(ctx, "which", "bump")
 	if err != nil {
 		err = golang.Build.Exec(ctx,
