@@ -6,4 +6,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - run: go run lesiw.io/op@latest
