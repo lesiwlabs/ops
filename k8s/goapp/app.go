@@ -264,7 +264,7 @@ spec:
       labels:
         app: %[1]s
     spec:
-	  serviceAccountName: %[4]s
+      serviceAccountName: %[4]s
       imagePullSecrets:
         - name: regcred
       containers:
@@ -340,7 +340,7 @@ kind: Database
 metadata:
   name: %[1]s
 spec:
-  databaseReclaimPolicy: delete
+  databaseReclaimPolicy: retain
   name: %[1]s
   owner: %[2]s
   cluster:
