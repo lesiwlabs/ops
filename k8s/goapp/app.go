@@ -38,7 +38,7 @@ var getSpkez = sync.OnceValues(func() (command.Machine, error) {
 		return nil, fmt.Errorf("error checking spkez: %w", err)
 	}
 
-	return sub.Machine(sh, "spkez"), nil
+	return sub.Machine(sys.Machine(), "spkez"), nil
 })
 
 var getKubectl = sync.OnceValues(func() (command.Machine, error) {
