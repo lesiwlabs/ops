@@ -468,7 +468,7 @@ func (op Ops) k8sCtrSpec(ctx context.Context) (string, error) {
 	}
 	for k, v := range op.Env {
 		env.WriteString(fmt.Sprintf("            - name: %s\n"+
-			"              value: %s\n", k, v))
+			"              value: %q\n", k, v))
 	}
 	for k, v := range op.EnvSecrets {
 		spkez, err := getSpkez()
