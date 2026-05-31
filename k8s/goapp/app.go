@@ -445,7 +445,8 @@ func (op Ops) deployImage(ctx context.Context, img string) error {
 		return fmt.Errorf("could not write chart template: %w", err)
 	}
 	err = command.Exec(ctx, helm,
-		"helm", "upgrade", goapp.Name, "/chart", "--install")
+		"helm", "upgrade", goapp.Name, "/chart",
+		"--install", "--atomic")
 	if err != nil {
 		chart, readErr := command.Read(ctx, helm,
 			"cat", "/chart/templates/chart.yaml")
