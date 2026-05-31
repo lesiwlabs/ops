@@ -212,6 +212,10 @@ version: 1.0.0
 // 4: Port
 // 5: Additional container config
 // 6: Service account
+//
+// minReadySeconds gates the rolling update on a 20-second stay-alive
+// gap — covering lesiw.io/proc's 10-second StartupWindow plus the
+// 5-second StartupGrace force-exit timer plus a small buffer.
 const singleAppChart = `---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -219,6 +223,7 @@ metadata:
   name: %[1]s
 spec:
   replicas: 1
+  minReadySeconds: 20
   selector:
     matchLabels:
       app: %[1]s
@@ -256,6 +261,12 @@ metadata:
   name: %[1]s
 spec:
   replicas: 2
+  minReadySeconds: 20
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   selector:
     matchLabels:
       app: %[1]s
