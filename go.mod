@@ -14,7 +14,7 @@ require (
 	lesiw.io/fs v0.6.0
 	lesiw.io/linelen v0.2.0
 	lesiw.io/ops v0.15.0
-	lesiw.io/plscheck v0.21.0
+	lesiw.io/plscheck v0.20.0
 	lesiw.io/tidytypes v0.2.0
 )
 

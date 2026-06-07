@@ -25,7 +25,7 @@ require (
 	lesiw.io/flag v0.7.0 // indirect
 	lesiw.io/fs v0.6.0 // indirect
 	lesiw.io/linelen v0.2.0 // indirect
-	lesiw.io/plscheck v0.21.0 // indirect
+	lesiw.io/plscheck v0.20.0 // indirect
 	lesiw.io/prefix v0.1.0 // indirect
 	lesiw.io/tidytypes v0.2.0 // indirect
 	lesiw.io/zeros v0.3.0 // indirect
